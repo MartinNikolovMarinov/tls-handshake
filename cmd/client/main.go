@@ -6,15 +6,32 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
+
+	ecdhcrypto "github.com/tls-handshake/internal/ecdh_crypto"
 )
 
 func main() {
-    cert, err := tls.LoadX509KeyPair("../../certs/client.pem", "../../certs/client.key")
+    ec := ecdhcrypto.NewECDHCrypto()
+    cfg := &ecdhcrypto.GenKeyConfig{
+		Hosts:        "Test Company LLC.",
+		Organization: []string{"Test Org"},
+		ValidFrom:    time.Now(),
+		ValidFor:     time.Hour * 720, // 30 days
+		IsCA:         false,
+		CurveType:    ecdhcrypto.Secp256r1,
+	}
+    pkbytes, certbytes, err := ec.GenerateSignedKey(cfg)
+    if err != nil {
+        panic(err)
+    }
+
+    cert, err := tls.X509KeyPair(certbytes, pkbytes)
     if err != nil {
         log.Fatalf("client failed to load keys %s", err)
     }
     config := tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
-    conn, err := tls.Dial("tcp", "127.0.0.1:8001", &config)
+    conn, err := tls.Dial("tcp", "127.0.0.2:8001", &config)
     if err != nil {
         log.Fatalf("client: dial: %s", err)
     }
@@ -29,15 +46,18 @@ func main() {
     log.Println("client: handshake: ", state.HandshakeComplete)
     log.Println("client: mutual: ", state.NegotiatedProtocolIsMutual)
 
-    message := "Hello\n"
-    n, err := io.WriteString(conn, message)
-    if err != nil {
-        log.Fatalf("client: write: %s", err)
-    }
-    log.Printf("client: wrote %q (%d bytes)", message, n)
+    for i := 0; i < 5; i++ {
+        message := "Hello\n"
+        n, err := io.WriteString(conn, message)
+        if err != nil {
+            log.Fatalf("client: write: %s", err)
+        }
+        log.Printf("client: wrote %q (%d bytes)", message, n)
 
-    reply := make([]byte, 256)
-    n, err = conn.Read(reply)
-    log.Printf("client: read %q (%d bytes)", string(reply[:n]), n)
-    log.Print("client: exiting")
+        reply := make([]byte, 256)
+        n, err = conn.Read(reply)
+        log.Printf("client: read %q (%d bytes)", string(reply[:n]), n)
+        log.Print("client: exiting")
+        time.Sleep(time.Second * 5)
+    }
 }

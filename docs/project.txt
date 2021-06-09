@@ -1,0 +1,65 @@
+Potential candidate should develop solutions for the following two projects. It doesn't need to be fully finished, but should be functional within a proof-of-concept quality margin.
+
+Timeframe for finishing the projects is 2 weeks and solutions should be delivered with full source code attached.
+
+The second project is optional.
+
+----
+
+Project #1:
+
+Client/Server application with encrypted communication:
+
+Description:
+Create both client and server applications, which are able to communicate with each other over TCP. On client's connection, client and server should negotiate a shared encryption key using ECDH (Elliptic-curve Diffie-Hellman), which will be used to encrypt/decrypt the communcation. Server should handle a ping packet coming from the client and response with a simple pong response.
+
+Requirements:
+- Client and server applications communicating over TCP.
+- Handshake, negotiating a shared key, using ECDH, should be perform in the background with every incoming connection.
+- Client should be able to send a ping packet and receive a pong response from the server.
+- Use of a any modern encryption cipher. 
+
+Example object structure (NOTE: use only as reference; doesn't have to be exactly the same in finished project):
+```
+// Set up listener on specified TCP port
+func (o *Server) Listen(port int) error
+// Handler for incoming client packets
+func (o *Server) handlePacket(data []byte) error
+// Shut down listener
+func (o *Server) Close()
+
+// Connect to remote server
+func (o *Client) Connect(ipv4 string, port int) error
+// Send a ping request and return a []byte response from the server
+func (o *Client) Ping() ([]byte, error)
+// Disconnect the client
+func (o *Client) Disconnect()
+```
+
+Notes:
+
+Client software should be able to connect, send the ping request and disconnect after it's received. The handshake should happen in the background after connection and the client should wait until it's finished before sending the ping packet. The ping packet should be encrypted with a negotiated key during the handshake.
+
+Sample client code:
+```
+cl := NewClient()
+cl.Connect("127.0.0.1", 9999)
+cl.Ping()
+cl.Disconnect()
+```
+
+----
+
+Project #2: (optional)
+
+HTTP proxy server
+
+Description:
+Create an HTTP proxy server listening to both unencrypted and encrypted (TLS) HTTP connections. It should be able to recognize the destination server, the client is connecting to and proxy the connection asynchronously. Asynchronously, meaning that the client should not be waiting for HTTP proxy server to retrieve the full response to the proxied request, from the destination server. This should allow to download big files through the proxy without the client connection timing out, while waiting for the response.
+
+Requirements:
+- HTTP proxy listening for unencrypted and encrypted connections.
+- Proxying of HTTP requests between the client and the destination server.
+- Asynchronous proxying, without making the client wait for fully response from the destination server.
+
+

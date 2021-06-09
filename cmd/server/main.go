@@ -4,25 +4,47 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"log"
 	"net"
+	"time"
+
+	ecdhcrypto "github.com/tls-handshake/internal/ecdh_crypto"
 )
 
 func main() {
-    cert, err := tls.LoadX509KeyPair("../../certs/server.pem", "../../certs/server.key")
+    ec := ecdhcrypto.NewECDHCrypto()
+    cfg := &ecdhcrypto.GenKeyConfig{
+		Hosts:        "Test Company LLC.",
+		Organization: []string{"Test Org"},
+		ValidFrom:    time.Now(),
+		ValidFor:     time.Hour * 720, // 30 days
+		IsCA:         false,
+		CurveType:    ecdhcrypto.Secp256r1,
+	}
+    pkbytes, certbytes, err := ec.GenerateSignedKey(cfg)
+    if err != nil {
+        panic(err)
+    }
+
+    cert, err := tls.X509KeyPair(certbytes, pkbytes)
     if err != nil {
         log.Fatalf("server: loadkeys: %s", err)
     }
-    config := tls.Config{Certificates: []tls.Certificate{cert}}
+    config := tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: false}
     config.Rand = rand.Reader
-    service := "127.0.0.1:8001"
+    service := "127.0.0.2:8001"
     listener, err := tls.Listen("tcp", service, &config)
     if err != nil {
         log.Fatalf("server: listen: %s", err)
     }
     log.Print("server: listening")
+
+    counter := 0
     for {
         conn, err := listener.Accept()
+        counter++
+        fmt.Println(counter)
         if err != nil {
             log.Printf("server: accept: %s", err)
             break

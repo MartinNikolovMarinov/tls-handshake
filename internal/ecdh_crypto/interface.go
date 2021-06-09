@@ -1,7 +1,5 @@
 package ecdhcrypto
 
-import "crypto/ecdsa"
-
 type ECDHCrypto interface {
-	GenerateKey(cs ECDHCurveSize) (*ecdsa.PrivateKey, error)
+	GenerateSignedKey(cfg *GenKeyConfig) (pkey, cert []byte, err error)
 }

@@ -18,12 +18,5 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/client/main.go"
         },
-        {
-            "name": "Launch Public-Private Key ECDH Pair",
-            "type": "go",
-            "request": "launch",
-            "mode": "auto",
-            "program": "${workspaceFolder}/cmd/generate_key_pairs/main.go"
-        },
     ]
 }
