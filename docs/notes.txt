@@ -1,0 +1,19 @@
+Algorithm:
+
+    1. The client begins by calculating a private/public keypair for key exchange.
+
+
+Ignored TLS features:
+
+    Early data.
+        Early data can be sent if a session has previously been established with the server or when establishing a new
+        session using an out-of-band PSK, and only when the server is known to support it. Additionally these functions
+        can be used to send data from the server to the client when the client has not yet completed the authentication
+        stage of the handshake.
+
+        Early data has weaker security properties than other data sent over an SSL/TLS connection. In particular the
+        data does not have forward secrecy. There are also additional considerations around replay attacks. For these
+        reasons extreme care should be exercised when using early data. For specific details, consult the TLS 1.3
+        specification.
+
+        [source - https://tinyurl.com/2kcr7mkt]

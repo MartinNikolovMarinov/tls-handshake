@@ -1,139 +1,102 @@
 package ecdhcrypto
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"math/big"
-	"net"
-	"strings"
-	"time"
+	"io"
 )
-
-type ECDHCurveType string
 
 const (
-	Secp256r1 ECDHCurveType = "secp256r1"
-	Secp384r1 ECDHCurveType = "secp384r1"
-	Secp521r1 ECDHCurveType = "secp521r1"
+	privateKeyPemBlockType = "PRIVATE KEY"
 )
 
-type ecdhCrypto struct {
+var (
+	UnsupportedPubKeyErr      = errors.New("unsupported public key type")
+	UnsupportedPrivateKeyErr  = errors.New("unsupported private key type")
+	UnmarshalPubKeyFailedErr  = errors.New("failed to unmarshal public key")
+	InvalidPrivateKeyBlockErr = errors.New("invalid private key pem block")
+)
+
+type ECDHCrypto struct {
+	curve elliptic.Curve
+	rnd   io.Reader
 }
 
-func NewECDHCrypto() ECDHCrypto {
-	return &ecdhCrypto{}
+func NewECDHCrypto(curve elliptic.Curve, rnd io.Reader) *ECDHCrypto { // FIXME: return an interface here !
+	ret := &ECDHCrypto{curve: curve, rnd: rnd}
+	return ret
 }
 
-type GenKeyConfig struct {
-	// Hosts is a Comma-separated hostnames and IPs to generate a certificate for
-	Hosts        string
-	Organization []string
-	ValidFrom    time.Time
-	ValidFor     time.Duration
-	// IsCA denotes whether this cert should be its own Certificate Authority
-	IsCA bool
-	// CurveType denotes the ECDSA curve to use to generate a key
-	CurveType ECDHCurveType
+func (e *ECDHCrypto) GenerateKey() (crypto.PrivateKey, crypto.PublicKey, error) {
+	priv, err := ecdsa.GenerateKey(e.curve, e.rnd)
+	return priv, priv.Public(), err
 }
 
-func (ec *ecdhCrypto) GenerateSignedKey(cfg *GenKeyConfig) (pkey, cert []byte, err error) {
-	var pubkeyCurve elliptic.Curve
-
-	switch cfg.CurveType {
-	case Secp256r1:
-		pubkeyCurve = elliptic.P256()
-	case Secp384r1:
-		pubkeyCurve = elliptic.P384()
-	case Secp521r1:
-		pubkeyCurve = elliptic.P521()
-	default:
-		return nil, nil, errors.New("Unsupported ECDHCurveSize")
+func (e *ECDHCrypto) MarshalPubKey(p crypto.PublicKey) ([]byte, error) {
+	pub, ok := p.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, UnsupportedPubKeyErr
 	}
 
-	privateKey := new(ecdsa.PrivateKey)
-	if privateKey, err = ecdsa.GenerateKey(pubkeyCurve, rand.Reader); err != nil {
-		return nil, nil, err
+	return elliptic.Marshal(e.curve, pub.X, pub.Y), nil
+}
+
+func (e *ECDHCrypto) UnmarshalPubKey(out []byte) (crypto.PublicKey, error) {
+	x, y := elliptic.Unmarshal(e.curve, out)
+	if x == nil || y == nil {
+		return nil, UnmarshalPubKeyFailedErr
+	}
+	key := &ecdsa.PublicKey{
+		Curve: e.curve,
+		X:     x,
+		Y:     y,
+	}
+	return key, nil
+}
+
+func (e *ECDHCrypto) GenerateSharedSecret(privKey crypto.PrivateKey, pubKey crypto.PublicKey) ([]byte, error) {
+	priv, ok := privKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, UnsupportedPrivateKeyErr
+	}
+	pub, ok := pubKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, UnsupportedPubKeyErr
 	}
 
-	// KeyUsage bits set in the x509.Certificate template
-	keyUsage := x509.KeyUsageDigitalSignature
-	notBefore := cfg.ValidFrom
-	notAfter := notBefore.Add(cfg.ValidFor)
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	x, _ := e.curve.ScalarMult(pub.X, pub.Y, priv.D.Bytes())
+	return x.Bytes(), nil
+}
+
+// EncodePrivateKeyToPKCS encodes a private key to PKCS.
+// PKCS #8 is a standard syntax for storing private key information. See RFC 5958.
+// This data can be saved to a file.
+// Function does NOT use a passphrase.
+func (e *ECDHCrypto) EncodePrivateKeyToPKCS(privKey crypto.PrivateKey) ([]byte, error) {
+	pkcsBytes, err := x509.MarshalPKCS8PrivateKey(privKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: cfg.Organization,
-		},
-		NotBefore:             notBefore,
-		NotAfter:              notAfter,
-		KeyUsage:              keyUsage,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-	}
-
-	hosts := strings.Split(cfg.Hosts, ",")
-	for _, h := range hosts {
-		if ip := net.ParseIP(h); ip != nil {
-			template.IPAddresses = append(template.IPAddresses, ip)
-		} else {
-			template.DNSNames = append(template.DNSNames, h)
-		}
-	}
-
-	if cfg.IsCA {
-		template.IsCA = true
-		template.KeyUsage |= x509.KeyUsageCertSign
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	certBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	encodedPKeyBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateKeyBytes})
-
-	return encodedPKeyBytes, certBytes, nil
+	ret := pem.EncodeToMemory(&pem.Block{Type: privateKeyPemBlockType, Bytes: pkcsBytes})
+	return ret, nil
 }
 
-// func (ec *ecdhCrypto) Sign(privateKey *ecdsa.PrivateKey, reader io.Reader) error {
-// 	// TODO:
-// 	// h := md5.New()
-// 	// r := big.NewInt(0)
-// 	// s := big.NewInt(0)
-
-// 	// io.WriteString(h, "This is a message to be signed and verified by ECDSA!")
-// 	// signhash := h.Sum(nil)
-// 	// r, s, err := ecdsa.Sign(rand.Reader, privateKey, signhash)
-// 	// if err != nil {
-// 	// 	return err
-// 	// }
-
-// 	// signature := r.Bytes()
-// 	// signature = append(signature, s.Bytes()...)
-
-// 	// fmt.Printf("Signature : %x\n", signature)
-// 	return nil
-// }
-
-// TODO:
-// Sign ecdsa style
-
-// // Verify
-// verifystatus := ecdsa.Verify(&pubkey, signhash, r, s)
-// fmt.Println(verifystatus) // should be true
+// DecodePrivateKeyFromPKCS decodes a private key from a PKCS encoded input data.
+// Works only if pem block type is privateKeyPemBlockType and there is exactly one pem block in
+// the PKCS encoded input data.
+// This data can be read from a file.
+func (e *ECDHCrypto) DecodePrivateKeyFromPKCS(data []byte) (crypto.PrivateKey, error) {
+	p, rest := pem.Decode(data)
+	if (len(rest) > 0) || (p == nil) || (p.Type != privateKeyPemBlockType) {
+		return nil, InvalidPrivateKeyBlockErr
+	}
+	pKey, err := x509.ParsePKCS8PrivateKey(p.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	return pKey, nil
+}
