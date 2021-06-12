@@ -13,8 +13,11 @@ type HandshakeHeader struct {
 	DataLen              uint
 }
 
-func ParseHandshakeHeader(raw [4]byte) (HandshakeHeader, error) {
+func ParseHandshakeHeader(raw []byte) (HandshakeHeader, error) {
 	var ret HandshakeHeader
+	if len(raw) != int(HandshakeHeaderByteSize) {
+		return ret, errors.New("invalid handshake header byte size")
+	}
 
 	switch HandshakeMsgType(raw[0]) {
 	case ClientHelloMsgType:

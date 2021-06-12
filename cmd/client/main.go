@@ -2,127 +2,133 @@ package main
 
 import (
 	"bytes"
-	"crypto/elliptic"
-	"crypto/rand"
-	"encoding/binary"
 	"fmt"
+	"math/rand"
+	"net"
+	"sync"
+	"time"
 
-	ecdhcrypto "github.com/tls-handshake/internal/ecdh_crypto"
-	tlstypes "github.com/tls-handshake/internal/tls_types"
+	_ "github.com/tls-handshake/internal/ecdh_crypto"
+	_ "github.com/tls-handshake/internal/tls_types"
+	limitconn "github.com/tls-handshake/pkg/limit_conn"
+	"github.com/tls-handshake/pkg/mem"
 )
 
-func main() {
-	e := ecdhcrypto.NewECDHCrypto(elliptic.P256(), rand.Reader)
-	priv, pub, err := e.GenerateKey()
-	if err != nil {
-		panic(err)
-	}
+func main()  {
+	rand.Seed(time.Now().UnixNano())
 
-	_ = priv
-	_ = pub
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	// con, err := net.Dial("tcp", "127.0.0.1:8081")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	go func ()  {
+		defer wg.Done()
+		defer fmt.Println("server done")
 
-	var (
-		clientRandom [32]byte
-		sessionId    [33]byte
-	)
-	_, _ = rand.Read(clientRandom[:])
-	_, _ = rand.Read(sessionId[:])
-	msg := tlstypes.ClientHelloRaw{
-		RecordHeader:       [5]byte{0x16, 0x03, 0x04, 0x00, 0xca},
-		HandshakeHeader:    [4]byte{0x01, 0x00, 0x00, 0xc6},
-		ClientVersion:      [3]byte{0x03, 0x03},
-		ClientRandom:       clientRandom,
-		SessionID:          sessionId,
-		CipherSuites:       [8]byte{0x00, 0x06, 0x13, 0x01, 0x13, 0x02, 0x13, 0x03},
-		CompressionMethods: [2]byte{0x01, 0x00},
-		ExtensionsLength:   0x77,
-	}
+		listener, err := net.Listen("tcp", "127.0.0.2:8082")
+		if err != nil {
+			panic(err)
+		}
 
-	var buf bytes.Buffer
-	err = binary.Write(&buf, binary.LittleEndian, &msg)
-	if err != nil {
-		panic(err)
-	}
+		var ittr int
 
-	msg = tlstypes.ClientHelloRaw{}
+		for {
+			fmt.Println("accepting traffic")
+			conn, err := listener.Accept()
+			if err != nil {
+				panic(err)
+			}
 
-	err = binary.Read(&buf, binary.LittleEndian, &msg)
-	if err != nil {
-		panic(err)
-	}
+			var received bytes.Buffer
+			w := limitconn.Wrap(conn).SetLimit(time.Second * 5)
 
-	rec, err := tlstypes.ParseRecordHeader(msg.RecordHeader)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(rec)
+			for !w.IsConnTimedout() {
+				var b [15]byte
+				n, err := w.Read(b[:])
+				if n > 0 {
+					_, _ = received.Write(b[:n])
+					_ = received.WriteByte(' ')
+					fmt.Println("server:", ittr)
+					ittr++
+				}
+				if err != nil {
+					continue
+				}
 
-	hh, err := tlstypes.ParseHandshakeHeader(msg.HandshakeHeader)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(hh)
+				// _, _ = received.Write(b[:n])
+				// _ = received.WriteByte(' ')
+				// fmt.Println("server:", ittr)
+				// ittr++
+			}
 
-	cs, err := tlstypes.ParseCipherSuites(msg.CipherSuites)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(cs)
+			fmt.Println("server:", "received", string(received.Bytes()))
+		}
+	}()
+
+	go func ()  {
+		defer wg.Done()
+		defer fmt.Println("client done")
+
+		time.Sleep(time.Second)
+
+		msgLeft := 15
+		for msgLeft > 0 {
+			conn, err := net.Dial("tcp", "127.0.0.2:8082")
+			if err != nil {
+				panic(err)
+			}
+
+			for i := 0; i < msgLeft; i++ {
+				var b [5]byte
+				mem.Set(b[:], '1')
+				b[len(b)-1] = '0'
+				_, err = conn.Write(b[:])
+				if err != nil {
+					fmt.Println("client:", err)
+					break
+				}
+
+				min := 0
+				max := 8
+				sdur := rand.Intn(max - min) + min
+				fmt.Println("client:", "sleeping for", sdur)
+				time.Sleep(time.Second * time.Duration(sdur))
+
+				msgLeft--
+			}
+		}
+
+	}()
+
+	wg.Wait()
 }
 
-// FIXME: remove comments
 // func main() {
-//     ec := ecdhcrypto.NewECDHCrypto()
-//     cfg := &ecdhcrypto.GenKeyConfig{
-// 		Hosts:        "Test Company LLC.",
-// 		Organization: []string{"Test Org"},
-// 		ValidFrom:    time.Now(),
-// 		ValidFor:     time.Hour * 720, // 30 days
-// 		IsCA:         false,
-// 		CurveType:    ecdhcrypto.Secp256r1,
-// 	}
-//     pkbytes, certbytes, err := ec.GenerateSignedKey(cfg)
-//     if err != nil {
-//         panic(err)
-//     }
+// _ = ecdhcrypto.NewECDHCrypto(elliptic.P256(), rand.Reader)
 
-//     cert, err := tls.X509KeyPair(certbytes, pkbytes)
-//     if err != nil {
-//         log.Fatalf("client failed to load keys %s", err)
-//     }
-//     config := tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
-//     conn, err := tls.Dial("tcp", "127.0.0.2:8001", &config)
-//     if err != nil {
-//         log.Fatalf("client: dial: %s", err)
-//     }
-//     defer conn.Close()
-//     log.Println("client: connected to: ", conn.RemoteAddr())
+// conn, err := net.Dial("tcp", "127.0.0.2:8082")
+// if err != nil {
+// 	panic(err)
+// }
 
-//     state := conn.ConnectionState()
-//     for _, v := range state.PeerCertificates {
-//         fmt.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
-//         fmt.Println(v.Subject)
-//     }
-//     log.Println("client: handshake: ", state.HandshakeComplete)
-//     log.Println("client: mutual: ", state.NegotiatedProtocolIsMutual)
+// var buf []byte = []byte{
+// 	0x16, 0x03, 0x04, 0x00, 0xca, 0x01, 0x00, 0x00, 0xc6, 0x03, 0x03, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+// 	0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+// 	0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9,
+// 	0xea, 0xeb, 0xec, 0xed, 0xee, 0xef, 0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb,
+// 	0xfc, 0xfd, 0xfe, 0xff, 0x00, 0x06, 0x13, 0x01, 0x13, 0x02, 0x13, 0x03, 0x01, 0x00, 0x00, 0x77, 0x00, 0x00,
+// 	0x00, 0x18, 0x00, 0x16, 0x00, 0x00, 0x13, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x75, 0x6c, 0x66,
+// 	0x68, 0x65, 0x69, 0x6d, 0x2e, 0x6e, 0x65, 0x74, 0x00, 0x0a, 0x00, 0x08, 0x00, 0x06, 0x00, 0x1d, 0x00, 0x17,
+// 	0x00, 0x18, 0x00, 0x0d, 0x00, 0x14, 0x00, 0x12, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x05, 0x03, 0x08, 0x05,
+// 	0x05, 0x01, 0x08, 0x06, 0x06, 0x01, 0x02, 0x01, 0x00, 0x33, 0x00, 0x26, 0x00, 0x24, 0x00, 0x1d, 0x00, 0x20,
+// 	0x35, 0x80, 0x72, 0xd6, 0x36, 0x58, 0x80, 0xd1, 0xae, 0xea, 0x32, 0x9a, 0xdf, 0x91, 0x21, 0x38, 0x38, 0x51,
+// 	0xed, 0x21, 0xa2, 0x8e, 0x3b, 0x75, 0xe9, 0x65, 0xd0, 0xd2, 0xcd, 0x16, 0x62, 0x54, 0x00, 0x2d, 0x00, 0x02,
+// 	0x01, 0x01, 0x00, 0x2b, 0x00, 0x03, 0x02, 0x03, 0x04,
+// }
 
-//     for i := 0; i < 5; i++ {
-//         message := "Hello\n"
-//         n, err := io.WriteString(conn, message)
-//         if err != nil {
-//             log.Fatalf("client: write: %s", err)
-//         }
-//         log.Printf("client: wrote %q (%d bytes)", message, n)
-
-//         reply := make([]byte, 256)
-//         n, err = conn.Read(reply)
-//         log.Printf("client: read %q (%d bytes)", string(reply[:n]), n)
-//         log.Print("client: exiting")
-//         time.Sleep(time.Second * 5)
-//     }
+// hs := client.NewClientHandshake(conn)
+// if err := hs.Handshake(); err != nil {
+// 	fmt.Println(err)
+// 	return
+// 	// panic(err)
+// }
 // }
