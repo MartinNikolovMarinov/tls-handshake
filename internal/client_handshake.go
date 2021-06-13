@@ -49,13 +49,13 @@ func (c *clientHandshake) writeClientHelloMsg() error {
 }
 
 func (c *clientHandshake) readServerHelloMsg() error {
-	someData := make([]byte, 1000)
-	n, err := c.rawConn.Read(someData)
+	var buf [tlstypes.MaxSizeOfPlaintextRecord]byte
+	n, err := c.rawConn.Read(buf[:])
 	if err != nil {
 		return err
 	}
 
-	record, err := tlstypes.ParseRecord(someData[:n])
+	record, err := tlstypes.ParseRecord(buf[:n])
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,12 @@ func (c *clientHandshake) readServerHelloMsg() error {
 		}
 		return errors.New("failed to parse alert record")
 	case tlstypes.HandshakeRecord:
-		// TODO: Parse server hello message here
+		hm, err := tlstypes.ParseServerHelloMsg(record.Data)
+		if err != nil {
+			return err
+		}
+		// TODO: save hm
+		_ = hm
 	default:
 		err = fmt.Errorf("received unsupported record type %d", record.RecordType)
 	}

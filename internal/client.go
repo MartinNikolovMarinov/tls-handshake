@@ -19,7 +19,7 @@ func (o *Client) Connect(ipv4 string, port uint16) error {
 		return err
 	}
 
-	fmt.Printf("client connection on %d", port)
+	fmt.Printf("client connection on %d\n", port)
 	o.rawConn = limitconn.Wrap(conn, "client_"+rand.GenString(32))
 	hs := NewClientHandshake(o.rawConn)
 	if err := hs.Handshake(); err != nil {

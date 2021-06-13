@@ -6,6 +6,7 @@ import (
 
 	tlstypes "github.com/tls-handshake/internal/tls_types"
 	limitconn "github.com/tls-handshake/pkg/limit_conn"
+	"github.com/tls-handshake/pkg/streams"
 )
 type serverHandshake struct {
 	rawConn *limitconn.Wrapper
@@ -29,10 +30,20 @@ func (c *serverHandshake) Handshake() error {
 		_, _ = r.WriteTo(c.rawConn)
 		return err
 	}
+	if err := c.writeServerHelloMsg(); err != nil {
+		// try to send a fatal alert:
+		a := &tlstypes.Alert{
+			Level:       tlstypes.FatalAlertLevel,
+			Description: tlstypes.HandshakeFailure,
+		}
+		r := tlstypes.MakeAlertRecord(a)
+		_, _ = r.WriteTo(c.rawConn)
+		return err
+	}
 
 	fmt.Println("success")
 	c.rawConn.Close()
-	return errors.New("TMP boom")
+	return nil
 }
 
 func (c *serverHandshake) readClientHelloMsg() error {
@@ -54,7 +65,18 @@ func (c *serverHandshake) readClientHelloMsg() error {
 	if err != nil {
 		return err
 	}
+
+	// TODO: save hm
 	_ = hm
 
+	return nil
+}
+
+func (c *serverHandshake) writeServerHelloMsg() error {
+	r := tlstypes.MakeServerHelloRecord()
+	rBytes := r.ToBinary()
+	if err := streams.WriteAllBytes(c.rawConn, rBytes); err != nil {
+		return err
+	}
 	return nil
 }

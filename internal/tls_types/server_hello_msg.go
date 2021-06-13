@@ -6,16 +6,15 @@ import (
 	"github.com/tls-handshake/internal/common"
 )
 
-type ClientHelloMsg struct {
+type ServerHelloMsg struct {
 	Type               HandshakeMsgType
 	Length             uint
 	TLSVersion         [VersionByteSize]byte // this one is hardcoded to tls 1.2, ignore it
 	Random             [RandomByteSize]byte
 	SessionIDLen       uint8
 	SessionID          []byte
-	CipherSuiteLen     uint16
-	CipherSuite        []CipherSuite
-	CompressionMethods [2]byte
+	CipherSuite        CipherSuite // selected cipher suite
+	CompressionMethods [1]byte
 	ExtensionsLen      uint16
 
 	// TODO: For now the extension data is kept as raw bytes. We don't parse it.
@@ -25,79 +24,71 @@ type ClientHelloMsg struct {
 	ExtensionData []byte
 }
 
-func ParseClientHelloMsg(buf []byte) (hm *ClientHelloMsg, err error) {
+func ParseServerHelloMsg(buf []byte) (hm *ServerHelloMsg, err error) {
 	if len(buf) < int(HandshakeHeaderByteSize) {
 		// must be able to, at least, read the HandshakeHeader
 		return nil, errors.New("unsupported handshake message size")
 	}
 
 	wi := 0 // write index
-	hm = &ClientHelloMsg{}
+	hm = &ServerHelloMsg{}
 
 	// Handshake Header:
 	hm.Type = HandshakeMsgType(buf[wi])
-	if hm.Type != ClientHelloMsgType {
-		return nil, errors.New("not a client hello handshake message")
+	if hm.Type != ServerHelloMsgType {
+		return nil, errors.New("not a server hello handshake message")
 	}
 	hm.Length = uint(buf[wi+1])<<16 + uint(buf[wi+2])<<8 + uint(buf[wi+3])
 	wi += int(HandshakeHeaderByteSize)
 	if hm.Length > uint(len(buf[wi:])) {
-		return nil, errors.New("client hello message has invalid length")
+		return nil, errors.New("server hello message has invalid length")
 	}
 
 	// TLSVersion:
 	if len(buf[wi:]) < len(hm.TLSVersion[:]) {
-		return nil, errors.New("client hello message has invalid format")
+		return nil, errors.New("server hello message has invalid format")
 	}
 	wi += copy(hm.TLSVersion[:], buf[wi:])
 
 	// Random:
 	if len(buf[wi:]) < len(hm.Random[:]) {
-		return nil, errors.New("client hello message has invalid format")
+		return nil, errors.New("server hello message has invalid format")
 	}
 	wi += copy(hm.Random[:], buf[wi:])
 
 	// SessionID:
 	if len(buf[wi:]) < 1 {
-		return nil, errors.New("client hello message has invalid format")
+		return nil, errors.New("server hello message has invalid format")
 	}
 	hm.SessionIDLen = uint8(buf[wi])
 	wi++
 	if len(buf[wi:]) < int(hm.SessionIDLen) {
-		return nil, errors.New("client hello message has invalid sessionID length")
+		return nil, errors.New("server hello message has invalid sessionID length")
 	}
 	hm.SessionID = make([]byte, hm.SessionIDLen)
 	wi += copy(hm.SessionID[:], buf[wi:])
 
-	// CipherSuites:
+	// CipherSuite:
 	if len(buf[wi:]) < 2 {
-		return nil, errors.New("client hello message has invalid format")
+		return nil, errors.New("server hello message has invalid format")
 	}
-	hm.CipherSuiteLen = uint16(buf[wi])<<8 + uint16(buf[wi+1])
+	hm.CipherSuite = (CipherSuite(buf[wi]) << 8) + CipherSuite(buf[wi+1])
 	wi += 2
-	if len(buf[wi:]) < int(hm.CipherSuiteLen) {
-		return nil, errors.New("client hello message has invalid cipher suite length")
-	}
-	hm.CipherSuite, err = ParseCipherSuites(buf[wi : wi+(int(hm.CipherSuiteLen))])
-	if err != nil {
-		return nil, err
-	}
-	wi += int(hm.CipherSuiteLen)
 
 	// CompressionMethods:
 	if len(buf[wi:]) < len(hm.CompressionMethods[:]) {
-		return nil, errors.New("client hello message has invalid format")
+		return nil, errors.New("server hello message has invalid format")
 	}
 	wi += copy(hm.CompressionMethods[:], buf[wi:])
 
 	// Extensions:
 	if len(buf[wi:]) < int(ExtensionsLengthByteSize) {
-		return nil, errors.New("client hello message has invalid format")
+		return nil, errors.New("server hello message has invalid format")
 	}
 	hm.ExtensionsLen = (uint16(buf[wi]) << 8) + uint16(buf[wi+1])
 	wi += int(ExtensionsLengthByteSize)
 	if len(buf[wi:]) < int(hm.ExtensionsLen) {
-		return nil, errors.New("client hello message has invalid cipher suite length")
+		return nil, errors.New("server hello message has invalid cipher suite length")
 	}
 	hm.ExtensionData = make([]byte, hm.ExtensionsLen)
 	wi += copy(hm.ExtensionData[:], buf[wi:])
@@ -108,7 +99,7 @@ func ParseClientHelloMsg(buf []byte) (hm *ClientHelloMsg, err error) {
 	return hm, nil
 }
 
-func (hm *ClientHelloMsg) ToBinary() []byte {
+func (hm *ServerHelloMsg) ToBinary() []byte {
 	common.AssertImpl(hm != nil)
 	// pre-allocate if length is known, else cap is HandshakeHeaderByteSize
 	raw := make([]byte, 0, hm.Length+uint(HandshakeHeaderByteSize))
@@ -119,11 +110,7 @@ func (hm *ClientHelloMsg) ToBinary() []byte {
 	raw = append(raw, hm.Random[:]...)
 	raw = append(raw, hm.SessionIDLen)
 	raw = append(raw, hm.SessionID[:]...)
-	raw = append(raw, byte(hm.CipherSuiteLen>>8), byte(hm.CipherSuiteLen))
-	for i := 0; i < len(hm.CipherSuite); i++ {
-		cs := hm.CipherSuite[i]
-		raw = append(raw, byte(cs>>8), byte(cs))
-	}
+	raw = append(raw, byte(hm.CipherSuite>>8), byte(hm.CipherSuite))
 	raw = append(raw, hm.CompressionMethods[:]...)
 	raw = append(raw, byte(hm.ExtensionsLen>>8), byte(hm.ExtensionsLen))
 	raw = append(raw, hm.ExtensionData[:]...)

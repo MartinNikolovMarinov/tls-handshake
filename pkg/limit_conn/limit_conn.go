@@ -63,7 +63,7 @@ func (w *Wrapper) Read(p []byte) (n int, err error) {
 	w.mux.Lock()
 	defer w.mux.Unlock()
 	if w.closed {
-		return 0, errors.New("closed connection")
+		return 0, errors.New("read on closed connection")
 	}
 
 	var done chan struct{}
@@ -95,7 +95,7 @@ func (w *Wrapper) Write(p []byte) (n int, err error) {
 	w.mux.Lock()
 	defer w.mux.Unlock()
 	if w.closed {
-		return 0, errors.New("closed connection")
+		return 0, errors.New("write on closed connection")
 	}
 
 	var done chan struct{}
@@ -126,6 +126,11 @@ func (w *Wrapper) Write(p []byte) (n int, err error) {
 func (w *Wrapper) Close() error {
 	w.mux.Lock()
 	defer w.mux.Unlock()
+
+	if w.closed {
+		fmt.Println("calling close on closed conn with id =", w.conID)
+		return nil
+	}
 
 	w.closed = true
 	fmt.Println("closed connection with id =", w.conID)

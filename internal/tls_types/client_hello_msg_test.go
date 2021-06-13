@@ -1,7 +1,6 @@
 package tlstypes
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -23,13 +22,13 @@ func TestParseClientHelloMsg(t *testing.T) {
 
 	r, err := ParseRecord(buf)
 	if err != nil {
-		fmt.Println(err)
+		t.Fatalf("ParseRecord is broken")
 	}
 
 	recBin := r.ToBinary()
 	v := string(recBin) == string(buf)
 	if !v {
-		t.Fatalf("ParseRecord is broken")
+		t.Fatalf("Record.ToBinary is broken")
 	}
 
 	hm, err := ParseClientHelloMsg(r.Data)
@@ -46,7 +45,6 @@ func TestParseClientHelloMsg(t *testing.T) {
 	hm.Length = 0
 	binHm = hm.ToBinary()
 	v = string(binHm) == string(buf[RecordHeaderByteSize:])
-	fmt.Println(v)
 	if !v {
 		t.Fatalf("ParseClientHelloMsg.ToBinary is broken when Length is 0")
 	}

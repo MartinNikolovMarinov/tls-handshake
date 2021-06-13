@@ -9,6 +9,5 @@ const (
 	HandshakeHeaderByteSize    TLSFieldSize = 4
 	VersionByteSize            TLSFieldSize = 2
 	RandomByteSize             TLSFieldSize = 32
-	CompressionMethodsByteSize TLSFieldSize = 2
 	ExtensionsLengthByteSize   TLSFieldSize = 2
 )
