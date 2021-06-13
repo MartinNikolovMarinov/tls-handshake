@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -10,15 +11,11 @@ import (
 )
 
 var (
-	ImplementationErr = errors.New("internal error") // should never happen, usually cause a panic
+	ImplementationErr = errors.New("internal error") // should never happen, usually causes a panic
 )
 
 type clientHandshake struct {
-	rawConn net.Conn // raw TCP connection
-
-	// random     []byte
-	// suites     []tlstypes.CipherSuite
-	// tlsVersion uint16
+	rawConn net.Conn
 }
 
 func NewClientHandshake(conn net.Conn) Handshaker {
@@ -40,7 +37,13 @@ func (c *clientHandshake) Handshake() error {
 }
 
 func (c *clientHandshake) writeClientHelloMsg() error {
-	r := tlstypes.MakeClientHelloRecord()
+	cfg := &tlstypes.ClientHelloExtParams{
+		KeyShareExtParams: &tlstypes.KeyShareExtParams{
+			CurveID: tls.CurveP256, // default curve
+			PubKey:  []byte("1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17"), // FIXME: start here, generete public key!
+		},
+	}
+	r := tlstypes.MakeClientHelloRecord(cfg)
 	rBytes := r.ToBinary()
 	if err := streams.WriteAllBytes(c.rawConn, rBytes); err != nil {
 		return err

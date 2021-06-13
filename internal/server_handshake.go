@@ -21,7 +21,6 @@ func NewServerHandshake(conn *limitconn.Wrapper) Handshaker {
 
 func (c *serverHandshake) Handshake() error {
 	if err := c.readClientHelloMsg(); err != nil {
-		// try to send a fatal alert:
 		a := &tlstypes.Alert{
 			Level:       tlstypes.FatalAlertLevel,
 			Description: tlstypes.HandshakeFailure,
@@ -31,7 +30,6 @@ func (c *serverHandshake) Handshake() error {
 		return err
 	}
 	if err := c.writeServerHelloMsg(); err != nil {
-		// try to send a fatal alert:
 		a := &tlstypes.Alert{
 			Level:       tlstypes.FatalAlertLevel,
 			Description: tlstypes.HandshakeFailure,

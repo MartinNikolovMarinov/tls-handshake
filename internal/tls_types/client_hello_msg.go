@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/tls-handshake/internal/common"
+	typesizes "github.com/tls-handshake/pkg/type_sizes"
 )
 
 type ClientHelloMsg struct {
@@ -17,12 +18,7 @@ type ClientHelloMsg struct {
 	CipherSuite        []CipherSuite
 	CompressionMethods [2]byte
 	ExtensionsLen      uint16
-
-	// TODO: For now the extension data is kept as raw bytes. We don't parse it.
-	// Might want to support:
-	// * Key Share
-	// * Supported Versions
-	ExtensionData []byte
+	ExtensionData      []byte
 }
 
 func ParseClientHelloMsg(buf []byte) (hm *ClientHelloMsg, err error) {
@@ -58,11 +54,11 @@ func ParseClientHelloMsg(buf []byte) (hm *ClientHelloMsg, err error) {
 	wi += copy(hm.Random[:], buf[wi:])
 
 	// SessionID:
-	if len(buf[wi:]) < 1 {
+	if len(buf[wi:]) < typesizes.Uint8Bytes {
 		return nil, errors.New("client hello message has invalid format")
 	}
 	hm.SessionIDLen = uint8(buf[wi])
-	wi++
+	wi += typesizes.Uint8Bytes
 	if len(buf[wi:]) < int(hm.SessionIDLen) {
 		return nil, errors.New("client hello message has invalid sessionID length")
 	}
@@ -70,11 +66,11 @@ func ParseClientHelloMsg(buf []byte) (hm *ClientHelloMsg, err error) {
 	wi += copy(hm.SessionID[:], buf[wi:])
 
 	// CipherSuites:
-	if len(buf[wi:]) < 2 {
+	if len(buf[wi:]) < typesizes.Uint16Bytes {
 		return nil, errors.New("client hello message has invalid format")
 	}
 	hm.CipherSuiteLen = uint16(buf[wi])<<8 + uint16(buf[wi+1])
-	wi += 2
+	wi += typesizes.Uint16Bytes
 	if len(buf[wi:]) < int(hm.CipherSuiteLen) {
 		return nil, errors.New("client hello message has invalid cipher suite length")
 	}
@@ -102,7 +98,7 @@ func ParseClientHelloMsg(buf []byte) (hm *ClientHelloMsg, err error) {
 	hm.ExtensionData = make([]byte, hm.ExtensionsLen)
 	wi += copy(hm.ExtensionData[:], buf[wi:])
 
-	// final sanity check:
+	// Final sanity check:
 	common.AssertImpl(wi-int(HandshakeHeaderByteSize) == int(hm.Length))
 
 	return hm, nil
@@ -136,7 +132,7 @@ func (hm *ClientHelloMsg) ToBinary() []byte {
 		raw[2] = byte(hm.Length >> 8)
 		raw[3] = byte(hm.Length)
 	} else {
-		// if length is set it should be correct!
+		// If length is set it should be correct!
 		common.AssertImpl(hm.Length == uint(len(raw))-uint(HandshakeHeaderByteSize))
 	}
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/tls-handshake/internal/common"
+	typesizes "github.com/tls-handshake/pkg/type_sizes"
 )
 
 type ServerHelloMsg struct {
@@ -16,12 +17,7 @@ type ServerHelloMsg struct {
 	CipherSuite        CipherSuite // selected cipher suite
 	CompressionMethods [1]byte
 	ExtensionsLen      uint16
-
-	// TODO: For now the extension data is kept as raw bytes. We don't parse it.
-	// Might want to support:
-	// * Key Share
-	// * Supported Versions
-	ExtensionData []byte
+	ExtensionData      []byte
 }
 
 func ParseServerHelloMsg(buf []byte) (hm *ServerHelloMsg, err error) {
@@ -57,11 +53,11 @@ func ParseServerHelloMsg(buf []byte) (hm *ServerHelloMsg, err error) {
 	wi += copy(hm.Random[:], buf[wi:])
 
 	// SessionID:
-	if len(buf[wi:]) < 1 {
+	if len(buf[wi:]) < typesizes.Uint8Bytes {
 		return nil, errors.New("server hello message has invalid format")
 	}
 	hm.SessionIDLen = uint8(buf[wi])
-	wi++
+	wi += typesizes.Uint8Bytes
 	if len(buf[wi:]) < int(hm.SessionIDLen) {
 		return nil, errors.New("server hello message has invalid sessionID length")
 	}
@@ -69,11 +65,11 @@ func ParseServerHelloMsg(buf []byte) (hm *ServerHelloMsg, err error) {
 	wi += copy(hm.SessionID[:], buf[wi:])
 
 	// CipherSuite:
-	if len(buf[wi:]) < 2 {
+	if len(buf[wi:]) < typesizes.Uint16Bytes {
 		return nil, errors.New("server hello message has invalid format")
 	}
 	hm.CipherSuite = (CipherSuite(buf[wi]) << 8) + CipherSuite(buf[wi+1])
-	wi += 2
+	wi += typesizes.Uint16Bytes
 
 	// CompressionMethods:
 	if len(buf[wi:]) < len(hm.CompressionMethods[:]) {
@@ -93,7 +89,7 @@ func ParseServerHelloMsg(buf []byte) (hm *ServerHelloMsg, err error) {
 	hm.ExtensionData = make([]byte, hm.ExtensionsLen)
 	wi += copy(hm.ExtensionData[:], buf[wi:])
 
-	// final sanity check:
+	// Final sanity check:
 	common.AssertImpl(wi-int(HandshakeHeaderByteSize) == int(hm.Length))
 
 	return hm, nil
@@ -101,7 +97,7 @@ func ParseServerHelloMsg(buf []byte) (hm *ServerHelloMsg, err error) {
 
 func (hm *ServerHelloMsg) ToBinary() []byte {
 	common.AssertImpl(hm != nil)
-	// pre-allocate if length is known, else cap is HandshakeHeaderByteSize
+	// Pre-allocate if length is known, else cap is HandshakeHeaderByteSize
 	raw := make([]byte, 0, hm.Length+uint(HandshakeHeaderByteSize))
 
 	raw = append(raw, byte(hm.Type))
@@ -123,7 +119,7 @@ func (hm *ServerHelloMsg) ToBinary() []byte {
 		raw[2] = byte(hm.Length >> 8)
 		raw[3] = byte(hm.Length)
 	} else {
-		// if length is set it should be correct!
+		// If length is set it should be correct!
 		common.AssertImpl(hm.Length == uint(len(raw))-uint(HandshakeHeaderByteSize))
 	}
 

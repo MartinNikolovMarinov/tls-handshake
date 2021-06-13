@@ -10,13 +10,6 @@ import (
 	"github.com/tls-handshake/pkg/rand"
 )
 
-// TODO: use context base tcp connection read and write instead of CloseConnAggressively
-func CloseConnAggressively(conn net.Conn, msg []byte, t time.Duration) {
-	conn.SetDeadline(time.Now().Add(t))
-	_, _ = conn.Write(msg)
-	_ = conn.Close()
-}
-
 type Wrapper struct {
 	rawConn    net.Conn
 	conID      string
