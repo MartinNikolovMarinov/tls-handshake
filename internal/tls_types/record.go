@@ -27,21 +27,9 @@ type Record struct {
 	Data       []byte
 }
 
-func MakeAlertRecord(a *Alert) *Record {
-	common.AssertImpl(a != nil)
-	abin := a.ToBinary()
-	r := &Record{
-		TLSVersion: tls.VersionTLS13,
-		RecordType: AlertRecord,
-		Length:     uint16(len(abin)),
-		Data:       abin,
-	}
-
-	return r
-}
-
 func ParseRecord(raw []byte) (*Record, error) {
 	if len(raw) < int(RecordHeaderByteSize) {
+		// must be able to, at least, read the RecordHeader
 		return nil, errors.New("unsupported record header byte size")
 	}
 

@@ -40,6 +40,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	lconn.SetLimit(preHandshakeConnLimit)
 	hs := NewServerHandshake(lconn)
 	if err := hs.Handshake(); err != nil {
+		fmt.Println(err)
 		lconn.Close()
 		return
 	}

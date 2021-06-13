@@ -51,7 +51,7 @@ type Alert struct {
 }
 
 func ParseAlert(raw []byte) (*Alert, error) {
-	if len(raw) < int(AlertByteSize) {
+	if len(raw) != int(AlertByteSize) {
 		return nil, errors.New("unsupported alert byte size")
 	}
 
