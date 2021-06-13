@@ -1,15 +1,21 @@
 package main
 
 import (
-	_ "github.com/tls-handshake/internal/ecdh_crypto"
-	_ "github.com/tls-handshake/internal/tls_types"
+	"fmt"
+	"os"
+
+	"github.com/tls-handshake/internal"
+)
+
+const (
+	address = "127.0.0.2"
+	port    = 8081
 )
 
 func main() {
-	// _ = ecdhcrypto.NewECDHCrypto(elliptic.P256(), rand.Reader)
-
-	// conn, err := net.Dial("tcp", "127.0.0.2:8082")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	var client internal.Client
+	if err := client.Connect(address, port); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }

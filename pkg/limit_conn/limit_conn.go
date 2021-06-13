@@ -28,8 +28,11 @@ type Wrapper struct {
 
 var _ net.Conn = (*Wrapper)(nil) // interface compliance check
 
-func Wrap(conn net.Conn) *Wrapper {
-	return &Wrapper{rawConn: conn, conID: rand.GenString(32)}
+func Wrap(conn net.Conn, conID string) *Wrapper {
+	if conID == "" {
+		conID += rand.GenString(32)
+	}
+	return &Wrapper{rawConn: conn, conID: conID}
 }
 
 func (w *Wrapper) SetLimit(d time.Duration) *Wrapper {

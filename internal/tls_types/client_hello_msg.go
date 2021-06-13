@@ -78,7 +78,7 @@ func ParseClientHelloMsg(buf []byte) (hm *ClientHelloMsg, err error) {
 	if len(buf[wi:]) < int(hm.CipherSuiteLen) {
 		return nil, errors.New("client hello message has invalid cipher suite length")
 	}
-	hm.CipherSuite, err = ParseCipherSuites(buf[wi : wi+int(hm.CipherSuiteLen)])
+	hm.CipherSuite, err = ParseCipherSuites(buf[wi : wi+(int(hm.CipherSuiteLen))])
 	if err != nil {
 		return nil, err
 	}

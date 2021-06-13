@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 
 	tlstypes "github.com/tls-handshake/internal/tls_types"
 	limitconn "github.com/tls-handshake/pkg/limit_conn"
@@ -29,7 +30,9 @@ func (c *serverHandshake) Handshake() error {
 		return err
 	}
 
-	return nil
+	fmt.Println("success")
+	c.rawConn.Close()
+	return errors.New("TMP boom")
 }
 
 func (c *serverHandshake) readClientHelloMsg() error {
@@ -47,10 +50,11 @@ func (c *serverHandshake) readClientHelloMsg() error {
 		return errors.New("not a handshake record")
 	}
 
-	// hm, err := tlstypes.ParseClientHelloMsg(record.Data)
-	// if err != nil {
-	// 	return err
-	// }
+	hm, err := tlstypes.ParseClientHelloMsg(record.Data)
+	if err != nil {
+		return err
+	}
+	_ = hm
 
 	return nil
 }

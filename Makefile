@@ -8,6 +8,14 @@ help:
 
 .DEFAULT_GOAL := help
 
+.PHONY: client
+client: ## run client
+	go run cmd/client/main.go
+
+.PHONY: server
+server: ## run server
+	go run cmd/server/main.go
+
 .PHONY: test
 test: clean ## run tests
 	go test ./... -v -cover -coverprofile=$(OUT_DIR)/cover.txt -bench=. && \
