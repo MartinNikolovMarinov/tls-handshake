@@ -50,84 +50,83 @@ type Alert struct {
 	Description AlertDescription
 }
 
-func ParseAlert(raw []byte) (ret Alert, err error) {
+func ParseAlert(raw []byte) (*Alert, error) {
 	if len(raw) < int(AlertByteSize) {
-		return ret, errors.New("unsupported alert byte size")
+		return nil, errors.New("unsupported alert byte size")
 	}
 
+	a := &Alert{}
 	switch AlertLevel(raw[0]) {
 	case WarningAlertLevel:
-		ret.Level = WarningAlertLevel
+		a.Level = WarningAlertLevel
 	case FatalAlertLevel:
-		ret.Level = FatalAlertLevel
+		a.Level = FatalAlertLevel
 	default:
-		return ret, errors.New("unsupported alert level")
+		return nil, errors.New("unsupported alert level")
 	}
 
 	switch AlertDescription(raw[1]) {
 	case CloseNotify:
-		ret.Description = CloseNotify
+		a.Description = CloseNotify
 	case UnexpectedMessage:
-		ret.Description = UnexpectedMessage
+		a.Description = UnexpectedMessage
 	case BadRecordMac:
-		ret.Description = BadRecordMac
+		a.Description = BadRecordMac
 	case DecryptionFailedReserved:
-		ret.Description = DecryptionFailedReserved
+		a.Description = DecryptionFailedReserved
 	case RecordOverflow:
-		ret.Description = RecordOverflow
+		a.Description = RecordOverflow
 	case DecompressionFailure:
-		ret.Description = DecompressionFailure
+		a.Description = DecompressionFailure
 	case HandshakeFailure:
-		ret.Description = HandshakeFailure
+		a.Description = HandshakeFailure
 	case NoCertificateReserved:
-		ret.Description = NoCertificateReserved
+		a.Description = NoCertificateReserved
 	case BadCertificate:
-		ret.Description = BadCertificate
+		a.Description = BadCertificate
 	case UnsupportedCertificate:
-		ret.Description = UnsupportedCertificate
+		a.Description = UnsupportedCertificate
 	case CertificateRevoked:
-		ret.Description = CertificateRevoked
+		a.Description = CertificateRevoked
 	case CertificateExpired:
-		ret.Description = CertificateExpired
+		a.Description = CertificateExpired
 	case CertificateUnknown:
-		ret.Description = CertificateUnknown
+		a.Description = CertificateUnknown
 	case IllegalParameter:
-		ret.Description = IllegalParameter
+		a.Description = IllegalParameter
 	case UnknownCa:
-		ret.Description = UnknownCa
+		a.Description = UnknownCa
 	case AccessDenied:
-		ret.Description = AccessDenied
+		a.Description = AccessDenied
 	case DecodeError:
-		ret.Description = DecodeError
+		a.Description = DecodeError
 	case DecryptError:
-		ret.Description = DecryptError
+		a.Description = DecryptError
 	case ExportRestrictionReserved:
-		ret.Description = ExportRestrictionReserved
+		a.Description = ExportRestrictionReserved
 	case ProtocolVersion:
-		ret.Description = ProtocolVersion
+		a.Description = ProtocolVersion
 	case InsufficientSecurity:
-		ret.Description = InsufficientSecurity
+		a.Description = InsufficientSecurity
 	case InternalError:
-		ret.Description = InternalError
+		a.Description = InternalError
 	case UserCanceled:
-		ret.Description = UserCanceled
+		a.Description = UserCanceled
 	case NoRenegotiation:
-		ret.Description = NoRenegotiation
+		a.Description = NoRenegotiation
 	case UnsupportedExtension:
-		ret.Description = UnsupportedExtension
+		a.Description = UnsupportedExtension
 	default:
-		return ret, errors.New("unsupported alert description")
+		return nil, errors.New("unsupported alert description")
 	}
 
-	return ret, nil
+	return a, nil
 }
 
-func MarshalAlert(rh *Alert) []byte {
-	if rh == nil {
-		panic(common.ImplementationErr)
-	}
+func (a *Alert) ToBinary() []byte {
+	common.AssertImpl(a != nil)
 	raw := make([]byte, AlertByteSize)
-	raw[0] = byte(rh.Level)
-	raw[1] = byte(rh.Description)
+	raw[0] = byte(a.Level)
+	raw[1] = byte(a.Description)
 	return raw
 }

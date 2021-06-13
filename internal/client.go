@@ -1,8 +1,6 @@
-package client
+package internal
 
 import (
-	"bytes"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -17,12 +15,12 @@ var (
 type clientHandshake struct {
 	rawConn net.Conn // raw TCP connection
 
-	random     []byte
-	suites     []tlstypes.CipherSuite
-	tlsVersion uint16
+	// random     []byte
+	// suites     []tlstypes.CipherSuite
+	// tlsVersion uint16
 }
 
-func NewClientHandshake(conn net.Conn) ClientHandshake {
+func NewClientHandshake(conn net.Conn) Handshaker {
 	ret := &clientHandshake{
 		rawConn: conn,
 	}
@@ -41,29 +39,29 @@ func (c *clientHandshake) Handshake() error {
 }
 
 func (c *clientHandshake) writeClientHelloMsg() error {
-	var buf bytes.Buffer
-	record := tlstypes.MarshalRecordHeader(&tlstypes.RecordHeader{
-		RecordType:      tlstypes.HandshakeRecord,
-		TLSVersion:      tls.VersionTLS13,
-		BytesInHandsake: 0xca, // TODO: write correct value here !
-	})
-	buf.Write(record)
-
-	// handShakeHeader := tlstypes.MarshalHandshakeHeader(&tlstypes.HandshakeHeader{
-	// 	DataLen:              198, // TODO: calculate actual !
-	// 	HandshakeMessageType: tlstypes.ClientHelloMsgType,
+	// var buf bytes.Buffer
+	// record := tlstypes.MarshalRecordHeader(&tlstypes.Record{
+	// 	RecordType:      tlstypes.HandshakeRecord,
+	// 	TLSVersion:      tls.VersionTLS13,
+	// 	Length: 0xca, // TODO: write correct value here !
 	// })
-	// buf.Write(handShakeHeader)
+	// buf.Write(record)
 
-	b := buf.Bytes()
-	n, err := c.rawConn.Write(b)
-	if err != nil {
-		return err
-	}
-	if n != buf.Len() {
-		// NOTE: can implement retry policy here.
-		return errors.New("short write - failed to write client hello")
-	}
+	// // handShakeHeader := tlstypes.MarshalHandshakeHeader(&tlstypes.HandshakeHeader{
+	// // 	DataLen:              198, // TODO: calculate actual !
+	// // 	HandshakeMessageType: tlstypes.ClientHelloMsgType,
+	// // })
+	// // buf.Write(handShakeHeader)
+
+	// b := buf.Bytes()
+	// n, err := c.rawConn.Write(b)
+	// if err != nil {
+	// 	return err
+	// }
+	// if n != buf.Len() {
+	// 	// NOTE: can implement retry policy here.
+	// 	return errors.New("short write - failed to write client hello")
+	// }
 
 	return nil
 }

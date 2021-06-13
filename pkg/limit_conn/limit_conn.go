@@ -1,10 +1,13 @@
 package limitconn
 
 import (
-	"context"
-	"io"
+	"errors"
+	"fmt"
 	"net"
+	"sync"
 	"time"
+
+	"github.com/tls-handshake/pkg/rand"
 )
 
 // TODO: use context base tcp connection read and write instead of CloseConnAggressively
@@ -14,22 +17,19 @@ func CloseConnAggressively(conn net.Conn, msg []byte, t time.Duration) {
 	_ = conn.Close()
 }
 
-// Wrapper is NOT thread safe !
 type Wrapper struct {
 	rawConn    net.Conn
+	conID      string
 	readLimit  *time.Duration
 	writeLimit *time.Duration
 	closed     bool
+	mux        sync.Mutex
 }
 
-var _ io.ReadWriteCloser = (*Wrapper)(nil) // interface compliance check
+var _ net.Conn = (*Wrapper)(nil) // interface compliance check
 
-func defaultCtx() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), time.Minute)
-}
-
-func Wrap(rwc net.Conn) *Wrapper {
-	return &Wrapper{rawConn: rwc}
+func Wrap(conn net.Conn) *Wrapper {
+	return &Wrapper{rawConn: conn, conID: rand.GenString(32)}
 }
 
 func (w *Wrapper) SetLimit(d time.Duration) *Wrapper {
@@ -37,20 +37,32 @@ func (w *Wrapper) SetLimit(d time.Duration) *Wrapper {
 }
 
 func (w *Wrapper) SetReadLimit(d time.Duration) *Wrapper {
+	w.mux.Lock()
+	defer w.mux.Unlock()
 	w.readLimit = &d
 	return w
 }
 
 func (w *Wrapper) SetWriteLimit(d time.Duration) *Wrapper {
+	w.mux.Lock()
+	defer w.mux.Unlock()
 	w.writeLimit = &d
 	return w
 }
 
-func (w *Wrapper) IsConnTimedout() bool {
+func (w *Wrapper) IsConnClosed() bool {
+	w.mux.Lock()
+	defer w.mux.Unlock()
 	return w.closed
 }
 
 func (w *Wrapper) Read(p []byte) (n int, err error) {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+	if w.closed {
+		return 0, errors.New("closed connection")
+	}
+
 	var done chan struct{}
 	if w.readLimit != nil {
 		timer := time.NewTimer(*w.readLimit)
@@ -60,7 +72,8 @@ func (w *Wrapper) Read(p []byte) (n int, err error) {
 			select {
 			case <-timer.C:
 				// time limit exceeded:
-				_ = w.rawConn.Close()
+				fmt.Println("Connection closed on slow read")
+				_ = w.Close()
 				w.closed = true
 			case <-done:
 				return
@@ -76,6 +89,12 @@ func (w *Wrapper) Read(p []byte) (n int, err error) {
 }
 
 func (w *Wrapper) Write(p []byte) (n int, err error) {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+	if w.closed {
+		return 0, errors.New("closed connection")
+	}
+
 	var done chan struct{}
 	if w.writeLimit != nil {
 		timer := time.NewTimer(*w.writeLimit)
@@ -85,7 +104,8 @@ func (w *Wrapper) Write(p []byte) (n int, err error) {
 			select {
 			case <-timer.C:
 				// time limit exceeded:
-				_ = w.rawConn.Close()
+				fmt.Println("Connection closed on slow write")
+				_ = w.Close()
 				w.closed = true
 			case <-done:
 				return
@@ -101,6 +121,22 @@ func (w *Wrapper) Write(p []byte) (n int, err error) {
 }
 
 func (w *Wrapper) Close() error {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+
 	w.closed = true
+	fmt.Println("closed connection with id =", w.conID)
 	return w.rawConn.Close()
 }
+
+// Interface compliance functions:
+
+func (w *Wrapper) LocalAddr() net.Addr { return w.rawConn.LocalAddr() }
+
+func (w *Wrapper) RemoteAddr() net.Addr { return w.rawConn.RemoteAddr() }
+
+func (w *Wrapper) SetDeadline(t time.Time) error { return w.rawConn.SetDeadline(t) }
+
+func (w *Wrapper) SetReadDeadline(t time.Time) error { return w.rawConn.SetReadDeadline(t) }
+
+func (w *Wrapper) SetWriteDeadline(t time.Time) error { return w.rawConn.SetWriteDeadline(t) }
