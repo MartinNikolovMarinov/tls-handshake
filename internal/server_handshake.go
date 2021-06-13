@@ -47,10 +47,10 @@ func (c *serverHandshake) readClientHelloMsg() error {
 		return errors.New("not a handshake record")
 	}
 
-	hm, err := tlstypes.ParseClientHelloMsg(record.Data)
-	if err != nil {
-		return err
-	}
+	// hm, err := tlstypes.ParseClientHelloMsg(record.Data)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
