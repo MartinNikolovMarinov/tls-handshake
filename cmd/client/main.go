@@ -10,7 +10,7 @@ import (
 
 const (
 	address = "127.0.0.2"
-	port    = 8081
+	port    = 8082
 )
 
 func main() {
@@ -20,15 +20,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := client.Ping(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	time.Sleep(time.Second)
-	if err := client.Ping(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	for i := 0; i < 10; i++ {
+		if err := client.Ping(); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		time.Sleep(time.Second)
 	}
 
 	client.Disconnect()

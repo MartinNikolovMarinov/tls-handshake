@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/tls-handshake/internal/suite"
@@ -15,16 +17,19 @@ import (
 )
 
 var (
-	preHandshakeConnLimit   = time.Second * 2
+	preHandshakeConnLimit = time.Second * 2
 	postHandshakeConnLimit = time.Minute
+	// postHandshakeConnLimit = time.Second * 3 // TODO: temporary short interval for debugging
 )
 
 type Server struct {
-	rawConn   *limitconn.Wrapper
-	handshake *serverHandshake
+	connections   []connState
+	connsMux      sync.Mutex
+	connIdCounter uint32
 }
 
 func (s *Server) Listen(ipv4 string, port uint16) error {
+	s.connections = make([]connState, 0)
 	address := fmt.Sprintf("%s:%d", ipv4, port)
 	listen, err := net.Listen("tcp", address)
 	if err != nil {
@@ -32,6 +37,9 @@ func (s *Server) Listen(ipv4 string, port uint16) error {
 	}
 
 	fmt.Printf("server listening on %d\n", port)
+	quit := make(chan struct{}, 0)
+	defer close(quit)
+	s.startSentinel(quit)
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
@@ -46,28 +54,84 @@ func (s *Server) Listen(ipv4 string, port uint16) error {
 	}
 }
 
+func (s *Server) startSentinel(quit <-chan struct{}) {
+	ticker := time.NewTicker(30 * time.Second)
+	go func() {
+		for {
+		select {
+			case <- ticker.C:
+				s.cleanConnections()
+			case <- quit:
+				fmt.Println("sentinel stopping")
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+func (s *Server) cleanConnections() {
+	s.connsMux.Lock()
+	defer s.connsMux.Lock()
+
+	updated := make([]connState, 0, len(s.connections))
+	for i := 0; i < len(s.connections); i++ {
+		c := s.connections[i]
+		if c.rawConn != nil && !c.rawConn.IsConnClosed() {
+			updated = append(updated, s.connections[i])
+		}
+	}
+
+	s.connections = updated
+	fmt.Println(len(s.connections), "still active")
+}
+
 func (s *Server) handleConnection(conn net.Conn) {
-	s.rawConn = limitconn.Wrap(conn, "server_"+rand.GenString(32))
-	s.rawConn.SetLimit(preHandshakeConnLimit)
-	s.handshake = NewServerHandshake(s.rawConn)
-	if err := s.handshake.Handshake(); err != nil {
+	var err error
+	rawConn := limitconn.Wrap(conn, "server_"+rand.GenString(32))
+	rawConn.SetLimit(preHandshakeConnLimit)
+	handshake := NewServerHandshake(rawConn)
+	if err = handshake.Handshake(); err != nil {
 		fmt.Println(err)
-		s.rawConn.Close()
+		rawConn.Close()
 		return
 	}
 
-	s.rawConn.SetLimit(postHandshakeConnLimit)
+	rawConn.SetLimit(postHandshakeConnLimit)
+
+	state := connState{rawConn, handshake}
+
+	s.connsMux.Lock()
+	s.connIdCounter++
+	s.connections = append(s.connections, state)
+	s.connsMux.Unlock()
+
 	for {
-		if err := s.recv(); err != nil {
-			fmt.Println(err)
+		err = state.recv()
+		if err == io.EOF {
+			continue
+		}
+		if err != nil {
+			break
+		}
+		if err = state.Pong(); err != nil {
 			break
 		}
 	}
 
-	s.rawConn.Close()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	rawConn.Close()
 }
 
-func (s *Server) Pong() error {
+type connState struct {
+	rawConn   *limitconn.Wrapper
+	handshake *serverHandshake
+}
+
+func (s *connState) Pong() error {
 	plaintext := []byte("PONG")
 	nonce := cbytes.UInt64ToBytes(s.handshake.seq)
 	ciphertext, err := suite.Encrypt(plaintext, s.handshake.serverHandshakeKey, nonce)
@@ -87,8 +151,7 @@ func (s *Server) Pong() error {
 	return nil
 }
 
-
-func (c *Server) recv() error {
+func (c *connState) recv() error {
 	var data [tlstypes.MaxSizeOfPlaintextRecord]byte
 	n, err := c.rawConn.Read(data[:])
 	if err != nil {

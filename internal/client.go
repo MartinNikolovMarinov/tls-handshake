@@ -59,6 +59,12 @@ func (s *Client) Ping() error {
 	}
 
 	s.handshake.seq++
+
+	// Receive PONG resonse:
+	if err := s.recv(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
