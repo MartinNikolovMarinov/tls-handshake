@@ -26,7 +26,7 @@ func Xor(a, b []byte) []byte {
 	return ret
 }
 
-func Int64ToBytes(n uint64) []byte {
+func UInt64ToBytes(n uint64) []byte {
 	var ret [typesizes.Uint64Bytes]byte
 	const oneByte = 4
 	ret[0] = byte(n)

@@ -1,8 +1,6 @@
 package internal
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/ecdsa"
 	crand "crypto/rand"
 	"crypto/sha256"
@@ -16,7 +14,6 @@ import (
 	"github.com/tls-handshake/internal/suite"
 	tlstypes "github.com/tls-handshake/internal/tls_types"
 	"github.com/tls-handshake/internal/tls_types/extensions"
-	"github.com/tls-handshake/pkg/bytes"
 	"github.com/tls-handshake/pkg/streams"
 )
 
@@ -26,12 +23,16 @@ type clientHandshake struct {
 	serverHello *tlstypes.ServerHelloMsg
 	seq         uint64
 
-	clientPrivateKey  *ecdsa.PrivateKey
-	serverPubKeyBytes []byte
-	serverPubicKey    *ecdsa.PublicKey
+	clientPrivateKey   *ecdsa.PrivateKey
+	serverPubKeyBytes  []byte
+	serverPubicKey     *ecdsa.PublicKey
+	clientHandshakeKey []byte
+	serverHandshakeKey []byte
+	clientHandshakeIv  []byte
+	serverHandshakeIv  []byte
 }
 
-func NewClientHandshake(conn net.Conn) Handshaker {
+func NewClientHandshake(conn net.Conn) *clientHandshake {
 	ret := &clientHandshake{
 		rawConn: conn,
 	}
@@ -60,64 +61,17 @@ func (c *clientHandshake) Handshake() error {
 		return err
 	}
 
-	// NOTE: we can consider the handshake a success from here
-
-	c.seq = 0 // start counting records receive
+	c.seq = 0 // start counting records received
 
 	earlySecret := suite.Extract(nil, nil)
 	derivedSecret := suite.DeriveSecret(earlySecret, "derived", nil)
 	handshakeSecret := suite.Extract(sharedKey, derivedSecret)
 	clientHandshakeTrafficSecret := suite.DeriveSecret(handshakeSecret, suite.ClientHandshakeTrafficLabel, helloHash)
 	serverHandshakeTrafficSecret := suite.DeriveSecret(handshakeSecret, suite.ServerHandshakeTrafficLabel, helloHash)
-	clientHandshakeKey := suite.DeriveSecret(clientHandshakeTrafficSecret, suite.KeyLabel, nil)
-	serverHandshakeKey := suite.DeriveSecret(serverHandshakeTrafficSecret, suite.KeyLabel, nil)
-	clientHandshakeIv := suite.DeriveSecret(clientHandshakeTrafficSecret, suite.IVLabel, nil)
-	serverHandshakeIv := suite.DeriveSecret(serverHandshakeTrafficSecret, suite.IVLabel, nil)
-
-	_ = clientHandshakeKey
-	_ = clientHandshakeIv
-
-	var bbb [1000]byte
-	n, err := c.rawConn.Read(bbb[:])
-	if err != nil {
-		panic("err")
-	}
-
-	ciphertext := bbb[:n]
-
-	nonce := bytes.Int64ToBytes(c.seq)
-
-	a, err := aes.NewCipher(bytes.Xor(serverHandshakeIv, nonce))
-	if err != nil {
-		panic(err)
-	}
-	aesgcm, err := cipher.NewGCM(a)
-	if err != nil {
-		panic(err)
-	}
-
-	nonce = bytes.PadSlice(nonce, 0x0, aesgcm.NonceSize())
-
-	ciphertext, err = aesgcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	a, err = aes.NewCipher(serverHandshakeKey)
-	if err != nil {
-		panic(err)
-	}
-	aesgcm, err = cipher.NewGCM(a)
-	if err != nil {
-		panic(err)
-	}
-
-	plaintext, err := aesgcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	fmt.Println(plaintext)
+	c.clientHandshakeKey = suite.DeriveSecret(clientHandshakeTrafficSecret, suite.KeyLabel, nil)
+	c.serverHandshakeKey = suite.DeriveSecret(serverHandshakeTrafficSecret, suite.KeyLabel, nil)
+	c.clientHandshakeIv = suite.DeriveSecret(clientHandshakeTrafficSecret, suite.IVLabel, nil)
+	c.serverHandshakeIv = suite.DeriveSecret(serverHandshakeTrafficSecret, suite.IVLabel, nil)
 
 	return nil
 }

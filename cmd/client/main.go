@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/tls-handshake/internal"
 )
@@ -19,6 +20,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("client connection success")
+	if err := client.Ping(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	time.Sleep(time.Second)
+	if err := client.Ping(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
 	client.Disconnect()
 }

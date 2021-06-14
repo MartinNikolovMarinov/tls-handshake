@@ -8,6 +8,8 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+// NOTE: taken from the golang core tls library
+
 const (
 	// ResumptionBinderLabel         = "res binder"
 	ClientHandshakeTrafficLabel   = "c hs traffic"
@@ -54,38 +56,3 @@ func Extract(newSecret, currentSecret []byte) []byte {
 	}
 	return hkdf.Extract(sha256.New, newSecret, currentSecret)
 }
-
-// // nextTrafficSecret generates the next traffic secret, given the current one,
-// // according to RFC 8446, Section 7.2.
-// func (c *CipherSuiteTLS13) nextTrafficSecret(trafficSecret []byte) []byte {
-// 	return c.ExpandLabel(trafficSecret, trafficUpdateLabel, nil, c.hash.Size())
-// }
-
-// // trafficKey generates traffic keys according to RFC 8446, Section 7.3.
-// func (c *CipherSuiteTLS13) trafficKey(trafficSecret []byte) (key, iv []byte) {
-// 	key = c.ExpandLabel(trafficSecret, "key", nil, c.keyLen)
-// 	iv = c.ExpandLabel(trafficSecret, "iv", nil, aeadNonceLength)
-// 	return
-// }
-
-// // finishedHash generates the Finished verify_data or PskBinderEntry according
-// // to RFC 8446, Section 4.4.4. See sections 4.4 and 4.2.11.2 for the baseKey
-// // selection.
-// func (c *CipherSuiteTLS13) finishedHash(baseKey []byte, transcript hash.Hash) []byte {
-// 	finishedKey := c.ExpandLabel(baseKey, "finished", nil, c.hash.Size())
-// 	verifyData := hmac.New(c.hash.New, finishedKey)
-// 	verifyData.Write(transcript.Sum(nil))
-// 	return verifyData.Sum(nil)
-// }
-
-// // exportKeyingMaterial implements RFC5705 exporters for TLS 1.3 according to
-// // RFC 8446, Section 7.5.
-// func (c *CipherSuiteTLS13) exportKeyingMaterial(masterSecret []byte, transcript hash.Hash) func(string, []byte, int) ([]byte, error) {
-// 	expMasterSecret := c.DeriveSecret(masterSecret, exporterLabel, transcript)
-// 	return func(label string, context []byte, length int) ([]byte, error) {
-// 		secret := c.DeriveSecret(expMasterSecret, label, nil)
-// 		h := c.hash.New()
-// 		h.Write(context)
-// 		return c.ExpandLabel(secret, "exporter", h.Sum(nil), length), nil
-// 	}
-// }
