@@ -13,18 +13,56 @@ import (
 func MakeAlertRecord(a *Alert) *Record {
 	common.AssertImpl(a != nil)
 	abin := a.ToBinary()
-	r := &Record{
+	record := &Record{
 		TLSVersion: tls.VersionTLS13,
 		RecordType: AlertRecord,
 		Length:     uint16(len(abin)),
 		Data:       abin,
 	}
-
-	return r
+	return record
 }
 
-func MakeClientHelloRecord(cfg *ClientHelloExtParams) *Record {
-	helloMsg := &ClientHelloMsg{
+func MakeServerHelloRecord(serverHelloMsg *ServerHelloMsg) *Record {
+	common.AssertImpl(serverHelloMsg != nil)
+	data := serverHelloMsg.ToBinary()
+	record := &Record{
+		TLSVersion: tls.VersionTLS13,
+		RecordType: HandshakeRecord,
+		Length:     uint16(len(data)),
+		Data:       data,
+	}
+	return record
+}
+
+func MakeClientHelloRecord(clientHelloMsg *ClientHelloMsg) *Record {
+	common.AssertImpl(clientHelloMsg != nil)
+	data := clientHelloMsg.ToBinary()
+	record := &Record{
+		TLSVersion: tls.VersionTLS13,
+		RecordType: HandshakeRecord,
+		Length:     uint16(len(data)),
+		Data:       data,
+	}
+	return record
+}
+
+// TODO: reduce code duplication
+
+type KeyShareExtParams struct {
+	CurveID tls.CurveID
+	PubKey  []byte
+}
+
+type ClientHelloExtParams struct {
+	KeyShareExtParams *KeyShareExtParams
+}
+
+type ServerHelloExtParams struct {
+	KeyShareExtParams *KeyShareExtParams
+}
+
+func MakeClientHelloMessage(cfg *ClientHelloExtParams) *ClientHelloMsg {
+	clientHelloMsg := &ClientHelloMsg{
 		Type:               ClientHelloMsgType,
 		Length:             0, // will be auto calculated
 		TLSVersion:         [2]byte{0x03, 0x01},
@@ -34,34 +72,17 @@ func MakeClientHelloRecord(cfg *ClientHelloExtParams) *Record {
 		CipherSuite:        []CipherSuite{TLS_AES_128_GCM_SHA256},
 		CompressionMethods: [2]byte{1, 0},
 	}
-	copy(helloMsg.Random[:], rand.CryptoRand(32))
+	copy(clientHelloMsg.Random[:], rand.CryptoRand(32))
 
 	// Encode Extensions:
 	if cfg != nil {
 		extData := encodeClientHelloExtensions(cfg)
-		helloMsg.ExtensionsLen += uint16(len(extData))
-		helloMsg.ExtensionData = make([]byte, helloMsg.ExtensionsLen)
-		copy(helloMsg.ExtensionData[:], extData)
+		clientHelloMsg.ExtensionsLen += uint16(len(extData))
+		clientHelloMsg.ExtensionData = make([]byte, clientHelloMsg.ExtensionsLen)
+		copy(clientHelloMsg.ExtensionData[:], extData)
 	}
 
-	helloMsgBin := helloMsg.ToBinary()
-	r := &Record{
-		TLSVersion: tls.VersionTLS13,
-		RecordType: HandshakeRecord,
-		Length:     uint16(len(helloMsgBin)),
-		Data:       helloMsgBin,
-	}
-
-	return r
-}
-
-type KeyShareExtParams struct {
-	CurveID tls.CurveID
-	PubKey  []byte
-}
-
-type ClientHelloExtParams struct {
-	KeyShareExtParams *KeyShareExtParams
+	return clientHelloMsg
 }
 
 func encodeClientHelloExtensions(cfg *ClientHelloExtParams) []byte {
@@ -96,8 +117,8 @@ func encodeClientHelloExtensions(cfg *ClientHelloExtParams) []byte {
 	return buf.Bytes()
 }
 
-func MakeServerHelloRecord() *Record {
-	helloMsg := &ServerHelloMsg{
+func MakeServerHelloMessage(cfg *ServerHelloExtParams) *ServerHelloMsg {
+	serverHelloMsg := &ServerHelloMsg{
 		Type:               ServerHelloMsgType,
 		Length:             0, // will be auto calculated
 		TLSVersion:         [2]byte{0x03, 0x01},
@@ -105,18 +126,48 @@ func MakeServerHelloRecord() *Record {
 		SessionID:          rand.CryptoRand(32), // session id is deprecated in TLS 1.3, but non zero value is set for compatibility
 		CipherSuite:        TLS_AES_128_GCM_SHA256,
 		CompressionMethods: [1]byte{0},
-		ExtensionsLen:      5,
-		ExtensionData:      []byte{0x00, 0x00, 0x00, 0x00, 0x00}, // not set yet
 	}
-	copy(helloMsg.Random[:], rand.CryptoRand(32))
+	copy(serverHelloMsg.Random[:], rand.CryptoRand(32))
 
-	helloMsgBin := helloMsg.ToBinary()
-	r := &Record{
-		TLSVersion: tls.VersionTLS13,
-		RecordType: HandshakeRecord,
-		Length:     uint16(len(helloMsgBin)),
-		Data:       helloMsgBin,
+	// Encode Extensions:
+	if cfg != nil {
+		extData := encodeServerHelloExtensions(cfg)
+		serverHelloMsg.ExtensionsLen += uint16(len(extData))
+		serverHelloMsg.ExtensionData = make([]byte, serverHelloMsg.ExtensionsLen)
+		copy(serverHelloMsg.ExtensionData[:], extData)
 	}
 
-	return r
+	return serverHelloMsg
+}
+
+func encodeServerHelloExtensions(cfg *ServerHelloExtParams) []byte {
+	var (
+		buf  bytes.Buffer
+		err error
+	)
+
+	if cfg.KeyShareExtParams != nil {
+		ksep := cfg.KeyShareExtParams
+		kse := &extensions.KeyShareExtension{
+			Type:            extensions.KeyShareType,
+			KeyShareDataLen: 0, // does not seem to matters
+			CurveID:         ksep.CurveID,
+			PubKeyBytesLen:  uint16(len(ksep.PubKey)),
+			PublicKey:       ksep.PubKey,
+		}
+		kse.ExtensionLen = kse.PubKeyBytesLen + typesizes.Uint16Bytes*3
+		_, err = buf.Write(kse.ToBinary())
+		common.AssertImpl(err == nil)
+	}
+
+	sv := &extensions.SupportedVersions{
+		Type:          extensions.SupporteVersionsType,
+		ExtensionLen:  3,
+		TLSVersionLen: 2,
+		TLSVersion:    tls.VersionTLS13,
+	}
+	_, err = buf.Write(sv.ToBinary())
+	common.AssertImpl(err == nil)
+
+	return buf.Bytes()
 }

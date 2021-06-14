@@ -22,7 +22,7 @@ func (s *Server) Listen(ipv4 string, port uint16) error {
 		return err
 	}
 
-	fmt.Printf("server listening on %d", port)
+	fmt.Printf("server listening on %d\n", port)
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
@@ -47,4 +47,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		lconn.Close()
 		return
 	}
+
+	// FIXME: implement ping handler when hadshake is done
+	lconn.Close()
 }

@@ -9,11 +9,15 @@ import (
 	"github.com/tls-handshake/internal/common"
 	"github.com/tls-handshake/internal/ecdh"
 	tlstypes "github.com/tls-handshake/internal/tls_types"
+	"github.com/tls-handshake/internal/tls_types/extensions"
 	"github.com/tls-handshake/pkg/streams"
 )
 
 type clientHandshake struct {
-	rawConn net.Conn
+	rawConn      net.Conn
+	clientHello  *tlstypes.ClientHelloMsg
+	serverHello  *tlstypes.ServerHelloMsg
+	serverPubKey []byte
 }
 
 func NewClientHandshake(conn net.Conn) Handshaker {
@@ -25,7 +29,7 @@ func NewClientHandshake(conn net.Conn) Handshaker {
 
 func (c *clientHandshake) Handshake() error {
 	cfg := &tlstypes.ClientHelloExtParams{}
-	if err := c.generateKey(cfg); err != nil {
+	if err := c.genClientKey(cfg); err != nil {
 		return err
 	}
 	if err := c.writeClientHelloMsg(cfg); err != nil {
@@ -35,10 +39,12 @@ func (c *clientHandshake) Handshake() error {
 		return err
 	}
 
+	fmt.Println("client:", "c.serverPubKey", c.serverPubKey)
+
 	return nil
 }
 
-func (c *clientHandshake) generateKey(cfg * tlstypes.ClientHelloExtParams) error {
+func (c *clientHandshake) genClientKey(cfg *tlstypes.ClientHelloExtParams) error {
 	common.AssertImpl(cfg != nil)
 	mgr := ecdh.NewManager(ecdh.DefaultCurve, crand.Reader)
 	_, pub, err := mgr.GenerateKey()
@@ -51,20 +57,25 @@ func (c *clientHandshake) generateKey(cfg * tlstypes.ClientHelloExtParams) error
 	}
 	cfg.KeyShareExtParams = &tlstypes.KeyShareExtParams{
 		CurveID: ecdh.DefaultCurveID,
-		PubKey: pubBytes,
+		PubKey:  pubBytes,
 	}
 
 	return nil
 }
 
-func (c *clientHandshake) writeClientHelloMsg(cfg * tlstypes.ClientHelloExtParams) error {
+func (c *clientHandshake) writeClientHelloMsg(cfg *tlstypes.ClientHelloExtParams) error {
 	common.AssertImpl(cfg != nil)
 
-	r := tlstypes.MakeClientHelloRecord(cfg)
+	clientHelloMsg := tlstypes.MakeClientHelloMessage(cfg)
+	r := tlstypes.MakeClientHelloRecord(clientHelloMsg)
 	rBytes := r.ToBinary()
 	if err := streams.WriteAllBytes(c.rawConn, rBytes); err != nil {
 		return err
 	}
+
+	// save state:
+	c.clientHello = clientHelloMsg
+
 	return nil
 }
 
@@ -80,6 +91,8 @@ func (c *clientHandshake) readServerHelloMsg() error {
 		return err
 	}
 
+	var serverHelloMsg *tlstypes.ServerHelloMsg
+
 	switch record.RecordType {
 	case tlstypes.AlertRecord:
 		alert, err := tlstypes.ParseAlert(record.Data)
@@ -88,15 +101,25 @@ func (c *clientHandshake) readServerHelloMsg() error {
 		}
 		return errors.New("failed to parse alert record")
 	case tlstypes.HandshakeRecord:
-		hm, err := tlstypes.ParseServerHelloMsg(record.Data)
+		serverHelloMsg, err = tlstypes.ParseServerHelloMsg(record.Data)
 		if err != nil {
 			return err
 		}
-		// TODO: save hm
-		_ = hm
 	default:
 		err = fmt.Errorf("received unsupported record type %d", record.RecordType)
 	}
+
+	exts, err := extensions.ParseExtensions(serverHelloMsg.ExtensionData, serverHelloMsg.ExtensionsLen)
+	if err != nil {
+		return err
+	}
+	ext := extensions.FindExtension(exts, extensions.KeyShareType)
+	kse, ok := ext.(*extensions.KeyShareExtension)
+	common.AssertImpl(ok)
+
+	// save state:
+	c.serverHello = serverHelloMsg
+	c.serverPubKey = kse.PublicKey
 
 	return nil
 }
