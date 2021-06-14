@@ -1,23 +1,34 @@
 package internal
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/ecdsa"
 	crand "crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"hash"
 
 	"github.com/tls-handshake/internal/common"
 	"github.com/tls-handshake/internal/ecdh"
+	"github.com/tls-handshake/internal/suite"
 	tlstypes "github.com/tls-handshake/internal/tls_types"
 	"github.com/tls-handshake/internal/tls_types/extensions"
+	"github.com/tls-handshake/pkg/bytes"
 	limitconn "github.com/tls-handshake/pkg/limit_conn"
 	"github.com/tls-handshake/pkg/streams"
 )
 
 type serverHandshake struct {
-	rawConn      *limitconn.Wrapper
-	clientHello  *tlstypes.ClientHelloMsg
-	serverHello  *tlstypes.ServerHelloMsg
-	clientPubKey []byte
+	rawConn     *limitconn.Wrapper
+	clientHello *tlstypes.ClientHelloMsg
+	serverHello *tlstypes.ServerHelloMsg
+	seq         uint64
+
+	serverPrivateKey  *ecdsa.PrivateKey
+	clientPubKeyBytes []byte
+	clientPubicKey    *ecdsa.PublicKey
 }
 
 func NewServerHandshake(conn *limitconn.Wrapper) Handshaker {
@@ -29,50 +40,79 @@ func NewServerHandshake(conn *limitconn.Wrapper) Handshaker {
 
 func (c *serverHandshake) Handshake() error {
 	if err := c.readClientHelloMsg(); err != nil {
-		a := &tlstypes.Alert{
-			Level:       tlstypes.FatalAlertLevel,
-			Description: tlstypes.HandshakeFailure,
-		}
-		r := tlstypes.MakeAlertRecord(a)
-		_, _ = r.WriteTo(c.rawConn)
+		c.sendFatalAlert()
 		return err
 	}
-
 	cfg := &tlstypes.ServerHelloExtParams{}
 	if err := c.genServerKey(cfg); err != nil {
+		c.sendFatalAlert()
+		return err
+	}
+	if err := c.writeServerHelloMsg(cfg); err != nil {
+		c.sendFatalAlert()
 		return err
 	}
 
-	if err := c.writeServerHelloMsg(cfg); err != nil {
-		a := &tlstypes.Alert{
-			Level:       tlstypes.FatalAlertLevel,
-			Description: tlstypes.HandshakeFailure,
-		}
-		r := tlstypes.MakeAlertRecord(a)
-		_, _ = r.WriteTo(c.rawConn)
+	sharedKey, err := ecdh.GenerateSharedSecret(c.serverPrivateKey, c.clientPubicKey)
+	if err != nil {
+		c.sendFatalAlert()
 		return err
+	}
+
+	helloHash, err := c.calculateHandshakeHash()
+	if err != nil {
+		c.sendFatalAlert()
+		return err
+	}
+
+	// NOTE: we can consider the handshake a success
+
+	c.seq = 0 // start counting records received
+
+	earlySecret := suite.Extract(nil, nil)
+	derivedSecret := suite.DeriveSecret(earlySecret, "derived", nil)
+	handshakeSecret := suite.Extract(sharedKey, derivedSecret)
+	clientHandshakeTrafficSecret := suite.DeriveSecret(handshakeSecret, suite.ClientHandshakeTrafficLabel, helloHash)
+	serverHandshakeTrafficSecret := suite.DeriveSecret(handshakeSecret, suite.ServerHandshakeTrafficLabel, helloHash)
+	clientHandshakeKey := suite.DeriveSecret(clientHandshakeTrafficSecret, suite.KeyLabel, nil)
+	serverHandshakeKey := suite.DeriveSecret(serverHandshakeTrafficSecret, suite.KeyLabel, nil)
+	clientHandshakeIv := suite.DeriveSecret(clientHandshakeTrafficSecret, suite.IVLabel, nil)
+	serverHandshakeIv := suite.DeriveSecret(serverHandshakeTrafficSecret, suite.IVLabel, nil)
+
+	_ = clientHandshakeKey
+	_ = clientHandshakeIv
+
+	nonce := bytes.Int64ToBytes(c.seq)
+	nonce = bytes.PadSlice(nonce, 0x0, 12)
+
+	plaintext := []byte("header some amount of data")
+
+	a, err := aes.NewCipher(serverHandshakeKey)
+	if err != nil {
+		panic(err)
+	}
+	aesgcm, err := cipher.NewGCM(a) // 128 bit AES
+	if err != nil {
+		panic(err)
+	}
+	ciphertext := aesgcm.Seal(nil, nonce, plaintext, nil)
+
+	a, err = aes.NewCipher(bytes.Xor(serverHandshakeIv, nonce))
+	if err != nil {
+		panic(err)
+	}
+	aesgcm, err = cipher.NewGCM(a) // 128 bit AES
+	if err != nil {
+		panic(err)
+	}
+	ciphertext = aesgcm.Seal(nil, nonce, ciphertext, nil)
+
+	_, err = c.rawConn.Write(ciphertext)
+	if err != nil {
+		panic("err")
 	}
 
 	fmt.Println("hadshake success")
-	return nil
-}
-
-func (c *serverHandshake) genServerKey(cfg *tlstypes.ServerHelloExtParams) error {
-	common.AssertImpl(cfg != nil)
-	mgr := ecdh.NewManager(ecdh.DefaultCurve, crand.Reader)
-	_, pub, err := mgr.GenerateKey()
-	if err != nil {
-		return err
-	}
-	pubBytes, err := mgr.MarshalPubKey(pub)
-	if err != nil {
-		return err
-	}
-	cfg.KeyShareExtParams = &tlstypes.KeyShareExtParams{
-		CurveID: ecdh.DefaultCurveID,
-		PubKey: pubBytes,
-	}
-
 	return nil
 }
 
@@ -105,8 +145,12 @@ func (c *serverHandshake) readClientHelloMsg() error {
 	common.AssertImpl(ok)
 
 	// save state
-	c.clientPubKey = kse.PublicKey
+	c.clientPubKeyBytes = kse.PublicKey
 	c.clientHello = clientHelloMsg
+	c.clientPubicKey, err = ecdh.UnmarshalPubKey(ecdh.DefaultCurve, kse.PublicKey)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -123,4 +167,46 @@ func (c *serverHandshake) writeServerHelloMsg(cfg *tlstypes.ServerHelloExtParams
 	c.serverHello = serverHelloMsg
 
 	return nil
+}
+
+// TODO: code dup:
+func (c *serverHandshake) genServerKey(cfg *tlstypes.ServerHelloExtParams) error {
+	common.AssertImpl(cfg != nil)
+	priv, pub, err := ecdh.GenerateKey(ecdh.DefaultCurve, crand.Reader)
+	if err != nil {
+		return err
+	}
+	pubBytes := ecdh.MarshalPubKey(pub)
+	cfg.KeyShareExtParams = &tlstypes.KeyShareExtParams{
+		CurveID: ecdh.DefaultCurveID,
+		PubKey:  pubBytes,
+	}
+
+	// save state:
+	c.serverPrivateKey = priv
+
+	return nil
+}
+
+// TODO: code dup:
+func (c *serverHandshake) calculateHandshakeHash() (h hash.Hash, err error) {
+	h = sha256.New()
+	_, err = h.Write(c.clientHello.ToBinary())
+	if err != nil {
+		return nil, err
+	}
+	_, err = h.Write(c.serverHello.ToBinary())
+	if err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+func (c *serverHandshake) sendFatalAlert() {
+	a := &tlstypes.Alert{
+		Level:       tlstypes.FatalAlertLevel,
+		Description: tlstypes.HandshakeFailure,
+	}
+	r := tlstypes.MakeAlertRecord(a)
+	_, _ = r.WriteTo(c.rawConn)
 }
