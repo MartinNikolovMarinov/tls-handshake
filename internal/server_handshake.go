@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/tls-handshake/internal/common"
 	tlstypes "github.com/tls-handshake/internal/tls_types"
+	"github.com/tls-handshake/internal/tls_types/extensions"
 	limitconn "github.com/tls-handshake/pkg/limit_conn"
 	"github.com/tls-handshake/pkg/streams"
 )
@@ -63,9 +65,17 @@ func (c *serverHandshake) readClientHelloMsg() error {
 	if err != nil {
 		return err
 	}
-
-	// TODO: save hm
 	_ = hm
+
+	exts, err := extensions.ParseExtensions(hm.ExtensionData, hm.ExtensionsLen)
+	if err != nil {
+		return err
+	}
+	ext := extensions.FindExtension(exts, extensions.KeyShareType)
+	kse, ok := ext.(*extensions.KeyShareExtension)
+	common.AssertImpl(ok)
+
+	_ = kse
 
 	return nil
 }

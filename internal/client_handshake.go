@@ -1,17 +1,15 @@
 package internal
 
 import (
-	"crypto/tls"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
 	"net"
 
+	"github.com/tls-handshake/internal/common"
+	"github.com/tls-handshake/internal/ecdh"
 	tlstypes "github.com/tls-handshake/internal/tls_types"
 	"github.com/tls-handshake/pkg/streams"
-)
-
-var (
-	ImplementationErr = errors.New("internal error") // should never happen, usually causes a panic
 )
 
 type clientHandshake struct {
@@ -26,7 +24,11 @@ func NewClientHandshake(conn net.Conn) Handshaker {
 }
 
 func (c *clientHandshake) Handshake() error {
-	if err := c.writeClientHelloMsg(); err != nil {
+	cfg := &tlstypes.ClientHelloExtParams{}
+	if err := c.generateKey(cfg); err != nil {
+		return err
+	}
+	if err := c.writeClientHelloMsg(cfg); err != nil {
 		return err
 	}
 	if err := c.readServerHelloMsg(); err != nil {
@@ -36,13 +38,28 @@ func (c *clientHandshake) Handshake() error {
 	return nil
 }
 
-func (c *clientHandshake) writeClientHelloMsg() error {
-	cfg := &tlstypes.ClientHelloExtParams{
-		KeyShareExtParams: &tlstypes.KeyShareExtParams{
-			CurveID: tls.CurveP256, // default curve
-			PubKey:  []byte("1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17"), // FIXME: start here, generete public key!
-		},
+func (c *clientHandshake) generateKey(cfg * tlstypes.ClientHelloExtParams) error {
+	common.AssertImpl(cfg != nil)
+	mgr := ecdh.NewManager(ecdh.DefaultCurve, crand.Reader)
+	_, pub, err := mgr.GenerateKey()
+	if err != nil {
+		return err
 	}
+	pubBytes, err := mgr.MarshalPubKey(pub)
+	if err != nil {
+		return err
+	}
+	cfg.KeyShareExtParams = &tlstypes.KeyShareExtParams{
+		CurveID: ecdh.DefaultCurveID,
+		PubKey: pubBytes,
+	}
+
+	return nil
+}
+
+func (c *clientHandshake) writeClientHelloMsg(cfg * tlstypes.ClientHelloExtParams) error {
+	common.AssertImpl(cfg != nil)
+
 	r := tlstypes.MakeClientHelloRecord(cfg)
 	rBytes := r.ToBinary()
 	if err := streams.WriteAllBytes(c.rawConn, rBytes); err != nil {

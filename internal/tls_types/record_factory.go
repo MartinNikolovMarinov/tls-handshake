@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 
 	"github.com/tls-handshake/internal/common"
+	"github.com/tls-handshake/internal/tls_types/extensions"
 	"github.com/tls-handshake/pkg/rand"
+	typesizes "github.com/tls-handshake/pkg/type_sizes"
 )
 
 func MakeAlertRecord(a *Alert) *Record {
@@ -63,21 +65,33 @@ type ClientHelloExtParams struct {
 }
 
 func encodeClientHelloExtensions(cfg *ClientHelloExtParams) []byte {
-	var buf bytes.Buffer
+	var (
+		buf  bytes.Buffer
+		err error
+	)
 
 	if cfg.KeyShareExtParams != nil {
 		ksep := cfg.KeyShareExtParams
-		kse := &KeyShareExtension{
-			Type:            KeyShare,
-			ExtentionLen:    0, // does not seem to matters
+		kse := &extensions.KeyShareExtension{
+			Type:            extensions.KeyShareType,
 			KeyShareDataLen: 0, // does not seem to matters
 			CurveID:         ksep.CurveID,
 			PubKeyBytesLen:  uint16(len(ksep.PubKey)),
 			PublicKey:       ksep.PubKey,
 		}
-		_, err := buf.Write(kse.ToBinary())
+		kse.ExtensionLen = kse.PubKeyBytesLen + typesizes.Uint16Bytes*3
+		_, err = buf.Write(kse.ToBinary())
 		common.AssertImpl(err == nil)
 	}
+
+	sv := &extensions.SupportedVersions{
+		Type:          extensions.SupporteVersionsType,
+		ExtensionLen:  3,
+		TLSVersionLen: 2,
+		TLSVersion:    tls.VersionTLS13,
+	}
+	_, err = buf.Write(sv.ToBinary())
+	common.AssertImpl(err == nil)
 
 	return buf.Bytes()
 }
