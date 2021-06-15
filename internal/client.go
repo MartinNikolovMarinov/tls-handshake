@@ -45,11 +45,11 @@ func (c *Client) Connect(ipv4 string, port uint16) error {
 func (s *Client) Ping() error {
 	plaintext := []byte("PING")
 	nonce := cbytes.UInt64ToBytes(s.handshake.seq)
-	ciphertext, err := suite.Encrypt(plaintext, s.handshake.serverHandshakeKey, nonce)
+	ciphertext, err := suite.Encrypt(plaintext, s.handshake.clientHandshakeKey, nonce)
 	if err != nil {
 		return err
 	}
-	ciphertext, err = suite.Encrypt(ciphertext, cbytes.Xor(s.handshake.serverHandshakeIv, nonce), nonce)
+	ciphertext, err = suite.Encrypt(ciphertext, cbytes.Xor(s.handshake.clientHandshakeIv, nonce), nonce)
 	if err != nil {
 		return err
 	}

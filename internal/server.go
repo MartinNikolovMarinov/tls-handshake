@@ -156,11 +156,11 @@ func (c *connState) recv() error {
 
 	ciphertext := data[:n]
 	nonce := cbytes.UInt64ToBytes(c.handshake.seq)
-	ciphertext, err = suite.Decrypt(ciphertext, cbytes.Xor(c.handshake.serverHandshakeIv, nonce), nonce)
+	ciphertext, err = suite.Decrypt(ciphertext, cbytes.Xor(c.handshake.clientHandshakeIv, nonce), nonce)
 	if err != nil {
 		return err
 	}
-	plaintext, err := suite.Decrypt(ciphertext, c.handshake.serverHandshakeKey, nonce)
+	plaintext, err := suite.Decrypt(ciphertext, c.handshake.clientHandshakeKey, nonce)
 	if err != nil {
 		return err
 	}
