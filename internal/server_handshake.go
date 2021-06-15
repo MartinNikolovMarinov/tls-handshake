@@ -135,7 +135,6 @@ func (c *serverHandshake) writeServerHelloMsg(cfg *tlstypes.ServerHelloExtParams
 	return nil
 }
 
-// TODO: code dup:
 func (c *serverHandshake) genServerKey(cfg *tlstypes.ServerHelloExtParams) error {
 	common.AssertImpl(cfg != nil)
 	priv, pub, err := ecdh.GenerateKey(ecdh.DefaultCurve, crand.Reader)
@@ -154,7 +153,6 @@ func (c *serverHandshake) genServerKey(cfg *tlstypes.ServerHelloExtParams) error
 	return nil
 }
 
-// TODO: code dup:
 func (c *serverHandshake) calculateHandshakeHash() (h hash.Hash, err error) {
 	h = sha256.New()
 	_, err = h.Write(c.clientHello.ToBinary())
