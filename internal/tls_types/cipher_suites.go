@@ -5,6 +5,8 @@ import (
 	"errors"
 )
 
+// As defined in RFC 4492 section 2.1 only for TLS 1.3
+
 type CipherSuite uint16
 
 const (

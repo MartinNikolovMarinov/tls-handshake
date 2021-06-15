@@ -11,3 +11,10 @@ const (
 	RandomByteSize             TLSFieldSize = 32
 	ExtensionsLengthByteSize   TLSFieldSize = 2
 )
+
+type HandshakeMsgType uint8
+
+const (
+	ClientHelloMsgType HandshakeMsgType = 0x1
+	ServerHelloMsgType HandshakeMsgType = 0x2
+)

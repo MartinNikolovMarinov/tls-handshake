@@ -22,6 +22,19 @@ func MakeAlertRecord(a *Alert) *Record {
 	return record
 }
 
+// The encryptedData does not include the record header. TODO: This does not follow the application recrod RFC 8446 and
+// previous TLS protocols. It's missing Auth Tag which additionally protects the integrity of the encrypted data and the
+// record header. With this implementation the record header could have been modified.
+func MakeAppliactionRecord(encryptedData []byte) *Record {
+	record := &Record{
+		TLSVersion: tls.VersionTLS13,
+		RecordType: ApplicationRecord,
+		Length:     uint16(len(encryptedData)),
+		Data:       encryptedData,
+	}
+	return record
+}
+
 func MakeServerHelloRecord(serverHelloMsg *ServerHelloMsg) *Record {
 	common.AssertImpl(serverHelloMsg != nil)
 	data := serverHelloMsg.ToBinary()
@@ -45,8 +58,6 @@ func MakeClientHelloRecord(clientHelloMsg *ClientHelloMsg) *Record {
 	}
 	return record
 }
-
-// TODO: reduce code duplication
 
 type KeyShareExtParams struct {
 	CurveID tls.CurveID
@@ -86,35 +97,8 @@ func MakeClientHelloMessage(cfg *ClientHelloExtParams) *ClientHelloMsg {
 }
 
 func encodeClientHelloExtensions(cfg *ClientHelloExtParams) []byte {
-	var (
-		buf  bytes.Buffer
-		err error
-	)
-
-	if cfg.KeyShareExtParams != nil {
-		ksep := cfg.KeyShareExtParams
-		kse := &extensions.KeyShareExtension{
-			Type:            extensions.KeyShareType,
-			KeyShareDataLen: 0, // does not seem to matters
-			CurveID:         ksep.CurveID,
-			PubKeyBytesLen:  uint16(len(ksep.PubKey)),
-			PublicKey:       ksep.PubKey,
-		}
-		kse.ExtensionLen = kse.PubKeyBytesLen + typesizes.Uint16Bytes*3
-		_, err = buf.Write(kse.ToBinary())
-		common.AssertImpl(err == nil)
-	}
-
-	sv := &extensions.SupportedVersions{
-		Type:          extensions.SupporteVersionsType,
-		ExtensionLen:  3,
-		TLSVersionLen: 2,
-		TLSVersion:    tls.VersionTLS13,
-	}
-	_, err = buf.Write(sv.ToBinary())
-	common.AssertImpl(err == nil)
-
-	return buf.Bytes()
+	exts := encodeCommonExtensions(cfg.KeyShareExtParams)
+	return exts
 }
 
 func MakeServerHelloMessage(cfg *ServerHelloExtParams) *ServerHelloMsg {
@@ -141,13 +125,17 @@ func MakeServerHelloMessage(cfg *ServerHelloExtParams) *ServerHelloMsg {
 }
 
 func encodeServerHelloExtensions(cfg *ServerHelloExtParams) []byte {
+	exts := encodeCommonExtensions(cfg.KeyShareExtParams)
+	return exts
+}
+
+func encodeCommonExtensions(ksep *KeyShareExtParams) []byte {
 	var (
 		buf  bytes.Buffer
 		err error
 	)
 
-	if cfg.KeyShareExtParams != nil {
-		ksep := cfg.KeyShareExtParams
+	if ksep != nil {
 		kse := &extensions.KeyShareExtension{
 			Type:            extensions.KeyShareType,
 			KeyShareDataLen: 0, // does not seem to matters
@@ -168,6 +156,5 @@ func encodeServerHelloExtensions(cfg *ServerHelloExtParams) []byte {
 	}
 	_, err = buf.Write(sv.ToBinary())
 	common.AssertImpl(err == nil)
-
 	return buf.Bytes()
 }

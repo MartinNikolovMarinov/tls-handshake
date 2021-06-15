@@ -39,6 +39,7 @@ func Test_e2e_SingleClient(t *testing.T) {
 		}
 
 		client.Disconnect()
+		time.Sleep(time.Millisecond * 2) // wait a bit, to see if the server errors on Disconnect
 	}()
 
 	wg.Wait()

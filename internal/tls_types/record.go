@@ -12,8 +12,9 @@ import (
 type RecordType uint8
 
 const (
-	AlertRecord     RecordType = 0x15
-	HandshakeRecord RecordType = 0x16
+	AlertRecord       RecordType = 0x15
+	HandshakeRecord   RecordType = 0x16
+	ApplicationRecord RecordType = 0x17
 
 	// This value is the length of the plaintext of a protected record. The value includes the content type and padding
 	// added in TLS 1.3 (that is, the complete length of TLSInnerPlaintext). TLS 1.3 uses a limit of 2^14+1 octets.
@@ -39,6 +40,8 @@ func ParseRecord(raw []byte) (*Record, error) {
 		ret.RecordType = HandshakeRecord
 	case AlertRecord:
 		ret.RecordType = AlertRecord
+	case ApplicationRecord:
+		ret.RecordType = ApplicationRecord
 	default:
 		return nil, errors.New("unsupported record type")
 	}

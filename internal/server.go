@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/tls-handshake/internal/suite"
@@ -19,13 +18,10 @@ import (
 var (
 	preHandshakeConnLimit  = time.Second * 2
 	postHandshakeConnLimit = time.Minute
-	// postHandshakeConnLimit = time.Second * 3 // TODO: temporary short interval for debugging
 )
 
 type Server struct {
 	connections   []connState
-	connsMux      sync.Mutex
-	connIdCounter uint32
 }
 
 func (s *Server) Listen(ipv4 string, port uint16) error {
@@ -38,7 +34,7 @@ func (s *Server) Listen(ipv4 string, port uint16) error {
 	defer listen.Close()
 
 	fmt.Printf("server listening on %d\n", port)
-	s.startSentinel()
+	// s.startSentinel()
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
@@ -53,34 +49,6 @@ func (s *Server) Listen(ipv4 string, port uint16) error {
 	}
 }
 
-func (s *Server) startSentinel() {
-	ticker := time.NewTicker(30 * time.Second)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				s.cleanConnections()
-			}
-		}
-	}()
-}
-
-func (s *Server) cleanConnections() {
-	s.connsMux.Lock()
-	defer s.connsMux.Lock()
-
-	updated := make([]connState, 0, len(s.connections))
-	for i := 0; i < len(s.connections); i++ {
-		c := s.connections[i]
-		if c.rawConn != nil && !c.rawConn.IsConnClosed() {
-			updated = append(updated, s.connections[i])
-		}
-	}
-
-	s.connections = updated
-	fmt.Println(len(s.connections), "still active")
-}
-
 func (s *Server) handleConnection(conn net.Conn) {
 	var err error
 	rawConn := limitconn.Wrap(conn, "server_"+rand.GenString(32))
@@ -93,13 +61,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	rawConn.SetLimit(postHandshakeConnLimit)
-
 	state := connState{rawConn, handshake}
-
-	s.connsMux.Lock()
-	s.connIdCounter++
-	s.connections = append(s.connections, state)
-	s.connsMux.Unlock()
 
 	for {
 		err = state.recv()
