@@ -109,7 +109,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 	for {
 		err = state.recv()
 		if err == io.EOF {
-			continue
+			err = nil // EOF is expected when communication is done.
+			break
 		}
 		if err != nil {
 			break
