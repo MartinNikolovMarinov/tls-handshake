@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	preHandshakeConnLimit = time.Second * 2
+	preHandshakeConnLimit  = time.Second * 2
 	postHandshakeConnLimit = time.Minute
 	// postHandshakeConnLimit = time.Second * 3 // TODO: temporary short interval for debugging
 )
@@ -35,11 +35,10 @@ func (s *Server) Listen(ipv4 string, port uint16) error {
 	if err != nil {
 		return err
 	}
+	defer listen.Close()
 
 	fmt.Printf("server listening on %d\n", port)
-	quit := make(chan struct{}, 0)
-	defer close(quit)
-	s.startSentinel(quit)
+	s.startSentinel()
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
@@ -54,17 +53,13 @@ func (s *Server) Listen(ipv4 string, port uint16) error {
 	}
 }
 
-func (s *Server) startSentinel(quit <-chan struct{}) {
+func (s *Server) startSentinel() {
 	ticker := time.NewTicker(30 * time.Second)
 	go func() {
 		for {
-		select {
-			case <- ticker.C:
+			select {
+			case <-ticker.C:
 				s.cleanConnections()
-			case <- quit:
-				fmt.Println("sentinel stopping")
-				ticker.Stop()
-				return
 			}
 		}
 	}()
