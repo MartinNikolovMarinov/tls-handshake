@@ -14,3 +14,5 @@ For information on make targets run:
 ```bash
 make help
 ```
+
+Credit to TLS Header fields illustrated for the excellent visual representation: https://tls.ulfheim.net/
