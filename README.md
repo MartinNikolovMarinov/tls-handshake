@@ -1,4 +1,4 @@
-# TCP Handshake Simple Implementation
+# TLS Handshake Simple Implementation
 
 **Disclaimer - This implementation is for educational purposes only.**
 
