@@ -1,4 +1,4 @@
-# TLS Handshake Simple Implementation
+# TLS 1.3 Handshake Implementation
 
 **Disclaimer - This implementation is for educational purposes only.**
 
